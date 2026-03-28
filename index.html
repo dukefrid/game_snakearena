@@ -99,7 +99,7 @@
 
     <div id="start-screen">
         <h1>🐍 Snake Action Arena</h1>
-        <div class="version-text">ver 1.04</div> <div class="menu-group">
+        <div class="version-text">ver 1.05</div> <div class="menu-group">
             <label for="nickname">Nickname</label>
             <input type="text" id="nickname" value="Player" maxlength="10">
         </div>
@@ -214,11 +214,9 @@
     let enemies = [];
     let items = [];
     let particles = []; 
-    let bullets = []; // 총알 배열
+    let bullets = []; 
     let currentZoom = 1.0; 
-    let activeBuffs = { magnet: 0, speed: 0, vision: 0, invincible: 0, gun: 0 }; 
     let itemSpawnInterval;
-    let lastShootTime = 0; // 마지막 총알 발사 시간
 
     startBtn.addEventListener('click', () => {
         const nickname = document.getElementById('nickname').value || 'Player';
@@ -232,7 +230,6 @@
         else if (difficulty === 'hard') { enemyCount = 15; enemyBaseSpeed = 4.8; }
 
         foods = []; enemies = []; items = []; particles = []; bullets = [];
-        activeBuffs = { magnet: 0, speed: 0, vision: 0, invincible: 0, gun: 0 };
         isPaused = false; 
         pauseBtn.innerText = "⏸ Pause";
         clearInterval(itemSpawnInterval);
@@ -281,7 +278,10 @@
             color: color, isPlayer: isPlayer, name: name,
             angle: Math.random() * Math.PI * 2,
             score: 0, turnDirection: null,
-            isDead: false 
+            isDead: false,
+            // 이제 모든 뱀이 독립적인 버프 상태를 갖습니다
+            buffs: { magnet: 0, speed: 0, vision: 0, invincible: 0, gun: 0 },
+            lastShootTime: 0
         };
     }
 
@@ -302,7 +302,7 @@
 
     function spawnItem() {
         if (items.length > 5 || isPaused) return; 
-        const types = ['magnet', 'speed', 'vision', 'invincible', 'gun']; // 새 아이템 추가
+        const types = ['magnet', 'speed', 'vision', 'invincible', 'gun']; 
         items.push({
             type: types[Math.floor(Math.random() * types.length)],
             x: Math.random() * WORLD_SIZE, y: Math.random() * WORLD_SIZE, radius: 18 
@@ -357,35 +357,42 @@
         if (!isPlaying || isPaused) return; 
 
         const now = Date.now();
-        snake.speed = (now < activeBuffs.speed) ? snake.baseSpeed * 1.3 : snake.baseSpeed;
-        const isInvincible = now < activeBuffs.invincible;
-        
-        let buffText = "";
-        if (now < activeBuffs.magnet) buffText += `<div class="buff-text buff-magnet">🧲 Magnet: ${Math.ceil((activeBuffs.magnet - now)/1000)}s</div>`;
-        if (now < activeBuffs.speed) buffText += `<div class="buff-text buff-speed">UP Speed: ${Math.ceil((activeBuffs.speed - now)/1000)}s</div>`;
-        if (now < activeBuffs.vision) buffText += `<div class="buff-text buff-vision">🔭 Vision: ${Math.ceil((activeBuffs.vision - now)/1000)}s</div>`;
-        if (now < activeBuffs.invincible) buffText += `<div class="buff-text buff-invincible">⭐ Invincible: ${Math.ceil((activeBuffs.invincible - now)/1000)}s</div>`;
-        if (now < activeBuffs.gun) buffText += `<div class="buff-text buff-gun">🔫 Gun: ${Math.ceil((activeBuffs.gun - now)/1000)}s</div>`;
-        buffStatusElement.innerHTML = buffText;
+        let allSnakes = [...enemies];
+        if (!snake.isDead) allSnakes.push(snake);
 
-        // --- 내 뱀 로직 ---
+        // UI 텍스트 (플레이어 기준)
         if (!snake.isDead) {
+            let buffText = "";
+            if (now < snake.buffs.magnet) buffText += `<div class="buff-text buff-magnet">🧲 Magnet: ${Math.ceil((snake.buffs.magnet - now)/1000)}s</div>`;
+            if (now < snake.buffs.speed) buffText += `<div class="buff-text buff-speed">UP Speed: ${Math.ceil((snake.buffs.speed - now)/1000)}s</div>`;
+            if (now < snake.buffs.vision) buffText += `<div class="buff-text buff-vision">🔭 Vision: ${Math.ceil((snake.buffs.vision - now)/1000)}s</div>`;
+            if (now < snake.buffs.invincible) buffText += `<div class="buff-text buff-invincible">⭐ Invincible: ${Math.ceil((snake.buffs.invincible - now)/1000)}s</div>`;
+            if (now < snake.buffs.gun) buffText += `<div class="buff-text buff-gun">🔫 Gun: ${Math.ceil((snake.buffs.gun - now)/1000)}s</div>`;
+            buffStatusElement.innerHTML = buffText;
+        }
+
+        // --- 플레이어 로직 ---
+        if (!snake.isDead) {
+            const isInvincible = now < snake.buffs.invincible;
+            snake.speed = (now < snake.buffs.speed) ? snake.baseSpeed * 1.3 : snake.baseSpeed;
+
             const dx = mouse.x - (canvas.width / 2);
             const dy = mouse.y - (canvas.height / 2);
             snake.angle = Math.atan2(dy, dx);
-            let playerHitWall = moveSnake(snake);
+            
+            let playerHitWall = moveSnake(snake, isInvincible);
 
             if (isInvincible) {
-                // 무적 상태: 적과 충돌하면 내가 죽지 않고 상대를 파괴함
+                // 무적: 닿은 적을 파괴 (적이 무적이면 살려둠)
                 for (let i = enemies.length - 1; i >= 0; i--) {
-                    // 내 몸통과 적 머리가 닿았거나, 내 머리와 적이 닿았을 때 모두 상대를 파괴
-                    if (checkBodyCollision(snake.x, snake.y, snake.radius, enemies[i]) || 
-                        Math.hypot(snake.x - enemies[i].x, snake.y - enemies[i].y) < snake.radius + enemies[i].radius) {
-                        die(enemies[i], i);
+                    let e = enemies[i];
+                    if (!(now < e.buffs.invincible)) {
+                        if (checkBodyCollision(snake.x, snake.y, snake.radius, e) || Math.hypot(snake.x - e.x, snake.y - e.y) < snake.radius + e.radius) {
+                            die(e, i);
+                        }
                     }
                 }
             } else {
-                // 일반 상태: 벽이나 적 몸통에 박으면 사망
                 if (playerHitWall || checkEnemyCollisions(snake, -1)) {
                     die(snake, -1); 
                     snake.isDead = true; 
@@ -393,153 +400,216 @@
                 }
             }
 
-            // --- 총알 발사 로직 ---
-            if (now < activeBuffs.gun) {
-                if (now - lastShootTime > 300) { // 0.3초마다 발사
-                    bullets.push({
-                        x: snake.x + Math.cos(snake.angle) * (snake.radius + 5),
-                        y: snake.y + Math.sin(snake.angle) * (snake.radius + 5),
-                        vx: Math.cos(snake.angle) * 15, // 총알 속도
-                        vy: Math.sin(snake.angle) * 15,
-                        radius: 6,
-                        color: '#ff3300'
-                    });
-                    lastShootTime = now;
+            // 플레이어 총알
+            if (now < snake.buffs.gun && now - snake.lastShootTime > 300) {
+                bullets.push({
+                    x: snake.x + Math.cos(snake.angle) * (snake.radius + 5),
+                    y: snake.y + Math.sin(snake.angle) * (snake.radius + 5),
+                    vx: Math.cos(snake.angle) * 15, vy: Math.sin(snake.angle) * 15,
+                    radius: 6, color: '#ff3300', owner: snake
+                });
+                snake.lastShootTime = now;
+            }
+        }
+
+        // --- 적 AI 로직 ---
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            let enemy = enemies[i];
+            const isInvincible = now < enemy.buffs.invincible;
+            enemy.speed = (now < enemy.buffs.speed) ? enemy.baseSpeed * 1.3 : enemy.baseSpeed;
+
+            // 회피 예측 센서 (무적이면 피하지 않음)
+            if (!isInvincible) {
+                let lookAhead = enemy.radius * 5; 
+                let futureX = enemy.x + Math.cos(enemy.angle) * lookAhead;
+                let futureY = enemy.y + Math.sin(enemy.angle) * lookAhead;
+
+                if (isPositionDangerous(futureX, futureY, enemy.radius, i)) {
+                    if (!enemy.turnDirection) enemy.turnDirection = Math.random() < 0.5 ? 1 : -1;
+                    enemy.angle += enemy.turnDirection * 0.3; 
+                } else {
+                    enemy.turnDirection = null; 
+                    // 안전할 땐 아이템이나 먹이 탐색
+                    let target = null; let minDist = 400; 
+                    
+                    // 먹이 & 아이템 모두 탐색 범위에 넣기
+                    const interactables = [...foods, ...items];
+                    for (let obj of interactables) {
+                        let d = Math.hypot(enemy.x - obj.x, enemy.y - obj.y);
+                        if (d < minDist) { minDist = d; target = obj; }
+                    }
+
+                    if (target) {
+                        let angleToTarget = Math.atan2(target.y - enemy.y, target.x - enemy.x);
+                        let angleDiff = angleToTarget - enemy.angle;
+                        angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+                        enemy.angle += Math.max(-0.06, Math.min(0.06, angleDiff)); 
+                    } else {
+                        enemy.angle += (Math.random() - 0.5) * 0.1;
+                    }
                 }
+            } else {
+                // 무적일 때는 피하지 않고 공격적으로 무조건 먹이/아이템 향해 직진
+                let target = null; let minDist = 800; 
+                const interactables = [...foods, ...items];
+                for (let obj of interactables) {
+                    let d = Math.hypot(enemy.x - obj.x, enemy.y - obj.y);
+                    if (d < minDist) { minDist = d; target = obj; }
+                }
+                if (target) {
+                    let angleToTarget = Math.atan2(target.y - enemy.y, target.x - enemy.x);
+                    let angleDiff = angleToTarget - enemy.angle;
+                    angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+                    enemy.angle += Math.max(-0.08, Math.min(0.08, angleDiff)); 
+                }
+            }
+
+            let enemyHitWall = moveSnake(enemy, isInvincible);
+
+            if (isInvincible) {
+                // 플레이어 공격
+                if (!snake.isDead && !(now < snake.buffs.invincible)) {
+                    if (checkBodyCollision(enemy.x, enemy.y, enemy.radius, snake) || Math.hypot(enemy.x - snake.x, enemy.y - snake.y) < enemy.radius + snake.radius) {
+                        die(snake, -1);
+                        snake.isDead = true;
+                        setTimeout(gameOver, 2000);
+                    }
+                }
+                // 다른 적 공격
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    if (i === j) continue;
+                    let e2 = enemies[j];
+                    if (!(now < e2.buffs.invincible)) {
+                        if (checkBodyCollision(enemy.x, enemy.y, enemy.radius, e2) || Math.hypot(enemy.x - e2.x, enemy.y - e2.y) < enemy.radius + e2.radius) {
+                            die(e2, j);
+                            if (j < i) i--; // 배열 크기가 줄어들면 인덱스 조정
+                        }
+                    }
+                }
+            } else {
+                if (enemyHitWall || (!snake.isDead && checkBodyCollision(enemy.x, enemy.y, enemy.radius, snake)) || checkEnemyCollisions(enemy, i)) {
+                    die(enemy, i);
+                }
+            }
+
+            // 적 총알
+            if (now < enemy.buffs.gun && now - enemy.lastShootTime > 300) {
+                bullets.push({
+                    x: enemy.x + Math.cos(enemy.angle) * (enemy.radius + 5),
+                    y: enemy.y + Math.sin(enemy.angle) * (enemy.radius + 5),
+                    vx: Math.cos(enemy.angle) * 15, vy: Math.sin(enemy.angle) * 15,
+                    radius: 6, color: '#ff3300', owner: enemy
+                });
+                enemy.lastShootTime = now;
             }
         }
 
         // --- 총알 이동 및 충돌 처리 ---
         for (let i = bullets.length - 1; i >= 0; i--) {
             let b = bullets[i];
-            b.x += b.vx;
-            b.y += b.vy;
+            b.x += b.vx; b.y += b.vy;
 
-            // 맵 밖으로 나가면 삭제
             if (b.x < 0 || b.x > WORLD_SIZE || b.y < 0 || b.y > WORLD_SIZE) {
-                bullets.splice(i, 1);
-                continue;
+                bullets.splice(i, 1); continue;
             }
 
-            // 적 충돌 검사
             let hit = false;
-            for (let j = enemies.length - 1; j >= 0; j--) {
-                let e = enemies[j];
-                // 머리 또는 몸통에 맞았을 때
-                if (Math.hypot(b.x - e.x, b.y - e.y) < b.radius + e.radius || checkBodyCollision(b.x, b.y, b.radius, e)) {
-                    die(e, j);
-                    createExplosion(b.x, b.y, '#ff3300', 10); // 총알 폭발 이펙트
+            // 모든 생존 뱀과 충돌 검사 (주인 제외)
+            for (let j = 0; j < allSnakes.length; j++) {
+                let tgt = allSnakes[j];
+                if (b.owner === tgt) continue;
+
+                if (Math.hypot(b.x - tgt.x, b.y - tgt.y) < b.radius + tgt.radius || checkBodyCollision(b.x, b.y, b.radius, tgt)) {
+                    // 무적이 아닐 때만 죽임
+                    if (!(now < tgt.buffs.invincible)) {
+                        let idx = tgt.isPlayer ? -1 : enemies.indexOf(tgt);
+                        die(tgt, idx);
+                        if (tgt.isPlayer) {
+                            snake.isDead = true;
+                            setTimeout(gameOver, 2000);
+                        }
+                    }
+                    createExplosion(b.x, b.y, '#ff3300', 10); 
                     hit = true;
                     break;
                 }
             }
-            if (hit) {
-                bullets.splice(i, 1); // 맞추면 총알도 사라짐
-            }
+            if (hit) bullets.splice(i, 1);
         }
 
-        // --- 적 뱀 AI 로직 ---
-        for (let i = enemies.length - 1; i >= 0; i--) {
-            let enemy = enemies[i];
-            let lookAhead = enemy.radius * 5; 
-            let futureX = enemy.x + Math.cos(enemy.angle) * lookAhead;
-            let futureY = enemy.y + Math.sin(enemy.angle) * lookAhead;
-
-            if (isPositionDangerous(futureX, futureY, enemy.radius, i)) {
-                if (!enemy.turnDirection) enemy.turnDirection = Math.random() < 0.5 ? 1 : -1;
-                enemy.angle += enemy.turnDirection * 0.3; 
-            } else {
-                enemy.turnDirection = null; 
-                let nearestFood = null; let minDist = 400; 
-                for (let f of foods) {
-                    let d = Math.hypot(enemy.x - f.x, enemy.y - f.y);
-                    if (d < minDist) { minDist = d; nearestFood = f; }
-                }
-
-                if (nearestFood) {
-                    let angleToFood = Math.atan2(nearestFood.y - enemy.y, nearestFood.x - enemy.x);
-                    let angleDiff = angleToFood - enemy.angle;
-                    angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-                    enemy.angle += Math.max(-0.06, Math.min(0.06, angleDiff)); 
-                } else {
-                    enemy.angle += (Math.random() - 0.5) * 0.1;
+        // --- 아이템 획득 (모든 뱀 대상) ---
+        for (let i = items.length - 1; i >= 0; i--) {
+            const item = items[i];
+            let pickedUp = false;
+            for (let s of allSnakes) {
+                if (Math.hypot(s.x - item.x, s.y - item.y) < s.radius + item.radius) {
+                    s.buffs[item.type] = now + 10000;
+                    pickedUp = true;
+                    break;
                 }
             }
-
-            let enemyHitWall = moveSnake(enemy);
-
-            if (enemyHitWall || (!snake.isDead && !isInvincible && checkBodyCollision(enemy.x, enemy.y, enemy.radius, snake)) || checkEnemyCollisions(enemy, i)) {
-                die(enemy, i);
-            }
+            if (pickedUp) items.splice(i, 1);
         }
 
-        if (!snake.isDead) {
-            for (let i = items.length - 1; i >= 0; i--) {
-                const item = items[i];
-                if (Math.hypot(snake.x - item.x, snake.y - item.y) < snake.radius + item.radius) {
-                    if (item.type === 'magnet') activeBuffs.magnet = now + 10000;
-                    if (item.type === 'speed') activeBuffs.speed = now + 10000;
-                    if (item.type === 'vision') activeBuffs.vision = now + 10000;
-                    if (item.type === 'invincible') activeBuffs.invincible = now + 10000;
-                    if (item.type === 'gun') activeBuffs.gun = now + 10000;
-                    items.splice(i, 1);
-                }
-            }
-        }
-
-        const isMagnetActive = now < activeBuffs.magnet && !snake.isDead;
+        // --- 먹이 및 자석 처리 (모든 뱀 대상) ---
         for (let i = foods.length - 1; i >= 0; i--) {
             let f = foods[i];
             
-            if (isMagnetActive) {
-                const distToPlayer = Math.hypot(snake.x - f.x, snake.y - f.y);
-                if (distToPlayer < 250) {
-                    const angleToPlayer = Math.atan2(snake.y - f.y, snake.x - f.x);
-                    f.x += Math.cos(angleToPlayer) * 8;
-                    f.y += Math.sin(angleToPlayer) * 8;
-                }
-            }
-
-            if (!snake.isDead && Math.hypot(snake.x - f.x, snake.y - f.y) < snake.radius + f.radius) {
-                eatFood(snake, f, i);
-            } else {
-                for (let e of enemies) {
-                    if (Math.hypot(e.x - f.x, e.y - f.y) < e.radius + f.radius) {
-                        eatFood(e, f, i);
-                        break;
+            // 1. 활성화된 자석들이 먹이를 당김
+            for (let s of allSnakes) {
+                if (now < s.buffs.magnet) {
+                    const distToS = Math.hypot(s.x - f.x, s.y - f.y);
+                    if (distToS < 250) {
+                        const angleToS = Math.atan2(s.y - f.y, s.x - f.x);
+                        f.x += Math.cos(angleToS) * 8;
+                        f.y += Math.sin(angleToS) * 8;
                     }
                 }
             }
+
+            // 2. 먹이 먹기
+            let eaten = false;
+            for (let s of allSnakes) {
+                if (Math.hypot(s.x - f.x, s.y - f.y) < s.radius + f.radius) {
+                    eatFood(s, f, i);
+                    eaten = true;
+                    break;
+                }
+            }
+            if (eaten) continue;
         }
 
         for (let i = particles.length - 1; i >= 0; i--) {
             let p = particles[i];
-            p.x += p.vx;
-            p.y += p.vy;
-            p.life -= p.decay;
-            p.radius *= 0.95; 
-            
-            if (p.life <= 0 || p.radius < 0.5) {
-                particles.splice(i, 1);
-            }
+            p.x += p.vx; p.y += p.vy;
+            p.life -= p.decay; p.radius *= 0.95; 
+            if (p.life <= 0 || p.radius < 0.5) particles.splice(i, 1);
         }
 
         updateLeaderboard();
     }
 
-    function moveSnake(s) {
+    function moveSnake(s, isInvincible) {
         s.x += Math.cos(s.angle) * s.speed;
         s.y += Math.sin(s.angle) * s.speed;
 
         let hitWall = false;
-        if (s.x < s.radius || s.x > WORLD_SIZE - s.radius || s.y < s.radius || s.y > WORLD_SIZE - s.radius) { hitWall = true; }
+        if (s.x < s.radius || s.x > WORLD_SIZE - s.radius || s.y < s.radius || s.y > WORLD_SIZE - s.radius) { 
+            hitWall = true; 
+            // 적 AI는 무적일 때 벽에 부딪히면 튕겨나옴
+            if (isInvincible && !s.isPlayer) {
+                s.angle += Math.PI; 
+            }
+        }
 
         s.x = Math.max(s.radius, Math.min(WORLD_SIZE - s.radius, s.x));
         s.y = Math.max(s.radius, Math.min(WORLD_SIZE - s.radius, s.y));
 
         s.history.unshift({ x: s.x, y: s.y });
         if (s.history.length > Math.floor(s.tailLength) * 4 + 10) s.history.pop();
-        return hitWall;
+        
+        // 무적이면 벽 충돌 판정을 무효화(죽지 않음)
+        return hitWall && !isInvincible; 
     }
 
     function eatFood(s, f, index) {
@@ -592,7 +662,7 @@
         if (!isPlaying) return;
 
         const time = Date.now();
-        const targetZoom = (time < activeBuffs.vision) ? (1 / 1.5) : 1.0;
+        const targetZoom = (time < snake.buffs.vision) ? (1 / 1.5) : 1.0;
         
         if (!isPaused) {
             currentZoom += (targetZoom - currentZoom) * 0.05;
@@ -636,7 +706,6 @@
             ctx.globalAlpha = 1.0; 
         });
 
-        // 총알 렌더링
         bullets.forEach(b => {
             ctx.beginPath();
             ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
@@ -686,8 +755,8 @@
         });
 
         const drawSnake = (s) => {
-            const isPlayerInvincible = s.isPlayer && (time < activeBuffs.invincible);
-            const invincibleSparkle = isPlayerInvincible ? Math.abs(Math.sin(time / 100)) : 0;
+            const isInvincible = (time < s.buffs.invincible);
+            const invincibleSparkle = isInvincible ? Math.abs(Math.sin(time / 100)) : 0;
 
             for (let i = Math.floor(s.tailLength) - 1; i >= 0; i--) {
                 const historyIndex = i * 4; 
@@ -696,9 +765,9 @@
                     ctx.beginPath(); ctx.arc(pos.x, pos.y, s.radius * 0.9, 0, Math.PI * 2);
                     ctx.fillStyle = i % 2 === 0 ? (s.isPlayer ? '#cc5555' : '#444') : s.color;
                     
-                    if (isPlayerInvincible) {
+                    if (isInvincible) {
                         ctx.shadowBlur = 20 * invincibleSparkle;
-                        ctx.shadowColor = '#ffff00'; // 무적 상태일 때 빛나는 효과
+                        ctx.shadowColor = '#ffff00';
                     }
                     
                     ctx.fill(); 
@@ -708,7 +777,7 @@
             }
             
             ctx.beginPath(); ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2); ctx.fillStyle = s.color; 
-            if (isPlayerInvincible) {
+            if (isInvincible) {
                 ctx.shadowBlur = 20 * invincibleSparkle;
                 ctx.shadowColor = '#ffff00';
             }
