@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Snake Action Arena</title>
     <style>
-        /* 모바일 스크롤 및 텍스트 선택 방지 */
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
             overflow: hidden; background-color: #1a1a2e;
@@ -19,7 +18,6 @@
             touch-action: none; 
         }
         
-        /* 인게임 우측 상단 UI */
         #ui-layer {
             position: absolute; top: 20px; right: 20px;
             color: white; font-weight: bold;
@@ -39,6 +37,8 @@
         .buff-magnet { color: #3498db; }
         .buff-speed { color: #f1c40f; }
         .buff-vision { color: #9b59b6; }
+        .buff-invincible { color: #f39c12; text-shadow: 0 0 8px #f39c12; }
+        .buff-gun { color: #e74c3c; text-shadow: 0 0 8px #e74c3c; }
 
         #leaderboard {
             margin-top: 20px; background-color: rgba(0, 0, 0, 0.6);
@@ -49,7 +49,6 @@
         #leaderboard li { margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .my-rank { color: #ff6b6b; font-weight: bold; text-shadow: 0 0 5px #ff6b6b; }
 
-        /* 시작 화면 (로비) */
         #start-screen {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background-color: rgba(26, 26, 46, 0.95);
@@ -82,7 +81,6 @@
         }
         #start-btn:hover { background-color: #ff4c4c; transform: scale(1.05); }
 
-        /* 컨트롤 버튼 (일시정지, 전체화면) */
         #controls-layer {
             display: none; 
             gap: 10px;
@@ -101,7 +99,7 @@
 
     <div id="start-screen">
         <h1>🐍 Snake Action Arena</h1>
-        <div class="version-text">ver 1.03</div> <div class="menu-group">
+        <div class="version-text">ver 1.04</div> <div class="menu-group">
             <label for="nickname">Nickname</label>
             <input type="text" id="nickname" value="Player" maxlength="10">
         </div>
@@ -161,7 +159,6 @@
     let isPaused = false; 
     let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
 
-    // --- 마우스 및 터치 이벤트 처리 ---
     window.addEventListener('mousemove', (e) => { 
         mouse.x = e.clientX; mouse.y = e.clientY; 
     });
@@ -182,7 +179,6 @@
         mouse.y = e.touches[0].clientY;
     }, { passive: false });
 
-    // --- 크로스 브라우징 전체화면 로직 ---
     fullscreenBtn.addEventListener('click', () => {
         let doc = window.document;
         let docEl = doc.documentElement;
@@ -197,7 +193,7 @@
                 });
                 fullscreenBtn.innerText = "✖ Exit Full";
             } else {
-                alert("현재 기기(아이폰 등)에서는 브라우저 정책상 전체화면을 지원하지 않습니다.");
+                alert("현재 기기에서는 브라우저 정책상 전체화면을 지원하지 않습니다.");
             }
         } else {
             if (cancelFullScreen) {
@@ -218,9 +214,11 @@
     let enemies = [];
     let items = [];
     let particles = []; 
+    let bullets = []; // 총알 배열
     let currentZoom = 1.0; 
-    let activeBuffs = { magnet: 0, speed: 0, vision: 0 }; 
+    let activeBuffs = { magnet: 0, speed: 0, vision: 0, invincible: 0, gun: 0 }; 
     let itemSpawnInterval;
+    let lastShootTime = 0; // 마지막 총알 발사 시간
 
     startBtn.addEventListener('click', () => {
         const nickname = document.getElementById('nickname').value || 'Player';
@@ -233,8 +231,8 @@
         if (difficulty === 'easy') { enemyCount = 5; enemyBaseSpeed = 3.5; }
         else if (difficulty === 'hard') { enemyCount = 15; enemyBaseSpeed = 4.8; }
 
-        foods = []; enemies = []; items = []; particles = []; 
-        activeBuffs = { magnet: 0, speed: 0, vision: 0 };
+        foods = []; enemies = []; items = []; particles = []; bullets = [];
+        activeBuffs = { magnet: 0, speed: 0, vision: 0, invincible: 0, gun: 0 };
         isPaused = false; 
         pauseBtn.innerText = "⏸ Pause";
         clearInterval(itemSpawnInterval);
@@ -304,7 +302,7 @@
 
     function spawnItem() {
         if (items.length > 5 || isPaused) return; 
-        const types = ['magnet', 'speed', 'vision'];
+        const types = ['magnet', 'speed', 'vision', 'invincible', 'gun']; // 새 아이템 추가
         items.push({
             type: types[Math.floor(Math.random() * types.length)],
             x: Math.random() * WORLD_SIZE, y: Math.random() * WORLD_SIZE, radius: 18 
@@ -343,11 +341,7 @@
         if (!snake.isDead) allSnakes.push(snake);
 
         allSnakes.sort((a, b) => b.score - a.score);
-        
-        // 브라우저의 너비가 768px 이하이거나, User-Agent에 모바일 식별자가 있다면 모바일로 간주
         const isMobileEnv = window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        
-        // 모바일 환경이면 4명, 아니면 10명 표시
         const maxDisplayCount = isMobileEnv ? 4 : 10;
         
         let html = '';
@@ -363,28 +357,88 @@
         if (!isPlaying || isPaused) return; 
 
         const now = Date.now();
-
         snake.speed = (now < activeBuffs.speed) ? snake.baseSpeed * 1.3 : snake.baseSpeed;
+        const isInvincible = now < activeBuffs.invincible;
         
         let buffText = "";
         if (now < activeBuffs.magnet) buffText += `<div class="buff-text buff-magnet">🧲 Magnet: ${Math.ceil((activeBuffs.magnet - now)/1000)}s</div>`;
         if (now < activeBuffs.speed) buffText += `<div class="buff-text buff-speed">UP Speed: ${Math.ceil((activeBuffs.speed - now)/1000)}s</div>`;
         if (now < activeBuffs.vision) buffText += `<div class="buff-text buff-vision">🔭 Vision: ${Math.ceil((activeBuffs.vision - now)/1000)}s</div>`;
+        if (now < activeBuffs.invincible) buffText += `<div class="buff-text buff-invincible">⭐ Invincible: ${Math.ceil((activeBuffs.invincible - now)/1000)}s</div>`;
+        if (now < activeBuffs.gun) buffText += `<div class="buff-text buff-gun">🔫 Gun: ${Math.ceil((activeBuffs.gun - now)/1000)}s</div>`;
         buffStatusElement.innerHTML = buffText;
 
+        // --- 내 뱀 로직 ---
         if (!snake.isDead) {
             const dx = mouse.x - (canvas.width / 2);
             const dy = mouse.y - (canvas.height / 2);
             snake.angle = Math.atan2(dy, dx);
             let playerHitWall = moveSnake(snake);
 
-            if (playerHitWall || checkEnemyCollisions(snake, -1)) {
-                die(snake, -1); 
-                snake.isDead = true; 
-                setTimeout(gameOver, 2000); 
+            if (isInvincible) {
+                // 무적 상태: 적과 충돌하면 내가 죽지 않고 상대를 파괴함
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    // 내 몸통과 적 머리가 닿았거나, 내 머리와 적이 닿았을 때 모두 상대를 파괴
+                    if (checkBodyCollision(snake.x, snake.y, snake.radius, enemies[i]) || 
+                        Math.hypot(snake.x - enemies[i].x, snake.y - enemies[i].y) < snake.radius + enemies[i].radius) {
+                        die(enemies[i], i);
+                    }
+                }
+            } else {
+                // 일반 상태: 벽이나 적 몸통에 박으면 사망
+                if (playerHitWall || checkEnemyCollisions(snake, -1)) {
+                    die(snake, -1); 
+                    snake.isDead = true; 
+                    setTimeout(gameOver, 2000); 
+                }
+            }
+
+            // --- 총알 발사 로직 ---
+            if (now < activeBuffs.gun) {
+                if (now - lastShootTime > 300) { // 0.3초마다 발사
+                    bullets.push({
+                        x: snake.x + Math.cos(snake.angle) * (snake.radius + 5),
+                        y: snake.y + Math.sin(snake.angle) * (snake.radius + 5),
+                        vx: Math.cos(snake.angle) * 15, // 총알 속도
+                        vy: Math.sin(snake.angle) * 15,
+                        radius: 6,
+                        color: '#ff3300'
+                    });
+                    lastShootTime = now;
+                }
             }
         }
 
+        // --- 총알 이동 및 충돌 처리 ---
+        for (let i = bullets.length - 1; i >= 0; i--) {
+            let b = bullets[i];
+            b.x += b.vx;
+            b.y += b.vy;
+
+            // 맵 밖으로 나가면 삭제
+            if (b.x < 0 || b.x > WORLD_SIZE || b.y < 0 || b.y > WORLD_SIZE) {
+                bullets.splice(i, 1);
+                continue;
+            }
+
+            // 적 충돌 검사
+            let hit = false;
+            for (let j = enemies.length - 1; j >= 0; j--) {
+                let e = enemies[j];
+                // 머리 또는 몸통에 맞았을 때
+                if (Math.hypot(b.x - e.x, b.y - e.y) < b.radius + e.radius || checkBodyCollision(b.x, b.y, b.radius, e)) {
+                    die(e, j);
+                    createExplosion(b.x, b.y, '#ff3300', 10); // 총알 폭발 이펙트
+                    hit = true;
+                    break;
+                }
+            }
+            if (hit) {
+                bullets.splice(i, 1); // 맞추면 총알도 사라짐
+            }
+        }
+
+        // --- 적 뱀 AI 로직 ---
         for (let i = enemies.length - 1; i >= 0; i--) {
             let enemy = enemies[i];
             let lookAhead = enemy.radius * 5; 
@@ -414,7 +468,7 @@
 
             let enemyHitWall = moveSnake(enemy);
 
-            if (enemyHitWall || (!snake.isDead && checkBodyCollision(enemy.x, enemy.y, enemy.radius, snake)) || checkEnemyCollisions(enemy, i)) {
+            if (enemyHitWall || (!snake.isDead && !isInvincible && checkBodyCollision(enemy.x, enemy.y, enemy.radius, snake)) || checkEnemyCollisions(enemy, i)) {
                 die(enemy, i);
             }
         }
@@ -426,6 +480,8 @@
                     if (item.type === 'magnet') activeBuffs.magnet = now + 10000;
                     if (item.type === 'speed') activeBuffs.speed = now + 10000;
                     if (item.type === 'vision') activeBuffs.vision = now + 10000;
+                    if (item.type === 'invincible') activeBuffs.invincible = now + 10000;
+                    if (item.type === 'gun') activeBuffs.gun = now + 10000;
                     items.splice(i, 1);
                 }
             }
@@ -580,12 +636,25 @@
             ctx.globalAlpha = 1.0; 
         });
 
+        // 총알 렌더링
+        bullets.forEach(b => {
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+            ctx.fillStyle = b.color;
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#ffff00';
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        });
+
         items.forEach(item => {
             const sparkle = Math.abs(Math.sin(time / 200)); 
             ctx.beginPath(); ctx.arc(item.x, item.y, item.radius, 0, Math.PI * 2);
             if (item.type === 'magnet') ctx.fillStyle = '#3498db';
             else if (item.type === 'speed') ctx.fillStyle = '#f1c40f';
             else if (item.type === 'vision') ctx.fillStyle = '#9b59b6';
+            else if (item.type === 'invincible') ctx.fillStyle = '#f39c12';
+            else if (item.type === 'gun') ctx.fillStyle = '#e74c3c';
             
             ctx.shadowBlur = 10 + 20 * sparkle; ctx.shadowColor = 'white'; ctx.fill(); ctx.shadowBlur = 0;
             
@@ -593,6 +662,8 @@
             if (item.type === 'magnet') iconText = '🧲';
             else if (item.type === 'speed') iconText = 'UP';
             else if (item.type === 'vision') iconText = '🔭';
+            else if (item.type === 'invincible') iconText = '⭐';
+            else if (item.type === 'gun') iconText = '🔫';
 
             ctx.fillStyle = `rgba(255, 255, 255, ${0.6 + 0.4 * sparkle})`; 
             ctx.font = item.type === 'speed' ? 'bold 14px Arial' : '18px Arial'; 
@@ -615,17 +686,35 @@
         });
 
         const drawSnake = (s) => {
+            const isPlayerInvincible = s.isPlayer && (time < activeBuffs.invincible);
+            const invincibleSparkle = isPlayerInvincible ? Math.abs(Math.sin(time / 100)) : 0;
+
             for (let i = Math.floor(s.tailLength) - 1; i >= 0; i--) {
                 const historyIndex = i * 4; 
                 if (historyIndex < s.history.length) {
                     const pos = s.history[historyIndex];
                     ctx.beginPath(); ctx.arc(pos.x, pos.y, s.radius * 0.9, 0, Math.PI * 2);
                     ctx.fillStyle = i % 2 === 0 ? (s.isPlayer ? '#cc5555' : '#444') : s.color;
-                    ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
+                    
+                    if (isPlayerInvincible) {
+                        ctx.shadowBlur = 20 * invincibleSparkle;
+                        ctx.shadowColor = '#ffff00'; // 무적 상태일 때 빛나는 효과
+                    }
+                    
+                    ctx.fill(); 
+                    ctx.shadowBlur = 0;
+                    ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
                 }
             }
             
-            ctx.beginPath(); ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2); ctx.fillStyle = s.color; ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2); ctx.fillStyle = s.color; 
+            if (isPlayerInvincible) {
+                ctx.shadowBlur = 20 * invincibleSparkle;
+                ctx.shadowColor = '#ffff00';
+            }
+            ctx.fill(); 
+            ctx.shadowBlur = 0;
+            ctx.stroke();
             
             const eyeOffset = s.radius * 0.5; const eyeRadius = s.radius * 0.25;
             ctx.fillStyle = 'white';
