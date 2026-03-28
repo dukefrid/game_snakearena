@@ -2,15 +2,22 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Snake Action Arena</title>
     <style>
+        /* 모바일 스크롤 및 텍스트 선택 방지 */
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
             overflow: hidden; background-color: #1a1a2e;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none; /* 스크롤 및 줌 완전 차단 */
+            -webkit-user-select: none; /* 아이폰 텍스트 선택 방지 */
+            user-select: none;
         }
-        canvas { display: block; }
+        canvas { 
+            display: block; 
+            touch-action: none; /* 캔버스 위 터치 동작 차단 */
+        }
         
         /* 인게임 우측 상단 UI */
         #ui-layer {
@@ -52,16 +59,12 @@
         #start-screen h1 { 
             font-size: 50px; color: #ff6b6b; 
             text-shadow: 0 0 20px rgba(255, 107, 107, 0.5); 
-            margin-bottom: 5px; /* 버전 텍스트를 위해 간격 조절 */
+            margin-bottom: 5px; 
             text-align: center;
         }
-        /* 버전 텍스트 스타일 */
         .version-text {
-            font-size: 18px;
-            color: #888;
-            margin-bottom: 30px;
-            letter-spacing: 2px;
-            font-weight: bold;
+            font-size: 18px; color: #888; margin-bottom: 30px;
+            letter-spacing: 2px; font-weight: bold;
         }
         
         .menu-group { margin-bottom: 20px; display: flex; flex-direction: column; align-items: flex-start; width: 250px; }
@@ -75,7 +78,7 @@
         #start-btn {
             margin-top: 20px; padding: 15px 40px; font-size: 24px; font-weight: bold;
             background-color: #ff6b6b; color: white; border: none; border-radius: 8px; cursor: pointer;
-            transition: 0.2s;
+            transition: 0.2s; pointer-events: auto;
         }
         #start-btn:hover { background-color: #ff4c4c; transform: scale(1.05); }
 
@@ -160,21 +163,54 @@
     let isPaused = false; 
     let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
 
-    window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
-    window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+    // --- 마우스 및 터치 이벤트 처리 ---
+    window.addEventListener('mousemove', (e) => { 
+        mouse.x = e.clientX; mouse.y = e.clientY; 
+    });
 
+    window.addEventListener('resize', () => { 
+        canvas.width = window.innerWidth; canvas.height = window.innerHeight; 
+    });
+
+    // 모바일 터치 처리 (스크롤 방지 포함)
+    window.addEventListener('touchstart', (e) => {
+        if(e.target === canvas) e.preventDefault(); // 캔버스 터치 시 기본 동작(스크롤) 방지
+        mouse.x = e.touches[0].clientX;
+        mouse.y = e.touches[0].clientY;
+    }, { passive: false });
+
+    window.addEventListener('touchmove', (e) => {
+        if(e.target === canvas) e.preventDefault(); 
+        mouse.x = e.touches[0].clientX;
+        mouse.y = e.touches[0].clientY;
+    }, { passive: false });
+
+    // --- 크로스 브라우징 전체화면 로직 ---
     fullscreenBtn.addEventListener('click', () => {
-        if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(err => {
-                alert(`전체화면 모드를 시작할 수 없습니다: ${err.message}`);
-            });
-            fullscreenBtn.innerText = "✖ Exit Full";
+        let doc = window.document;
+        let docEl = doc.documentElement;
+
+        let requestFullScreen = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen || docEl.msRequestFullscreen;
+        let cancelFullScreen = doc.exitFullscreen || doc.mozCancelFullScreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
+
+        if (!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
+            if (requestFullScreen) {
+                requestFullScreen.call(docEl).catch(err => {
+                    alert(`전체화면 모드를 시작할 수 없습니다.`);
+                });
+                fullscreenBtn.innerText = "✖ Exit Full";
+            } else {
+                alert("현재 기기(아이폰 등)에서는 브라우저 정책상 전체화면을 지원하지 않습니다.");
+            }
         } else {
-            document.exitFullscreen();
-            fullscreenBtn.innerText = "⛶ Full Screen";
+            if (cancelFullScreen) {
+                cancelFullScreen.call(doc);
+                fullscreenBtn.innerText = "⛶ Full Screen";
+            }
         }
     });
 
+    // --- 일시정지 로직 ---
     pauseBtn.addEventListener('click', () => {
         if (!isPlaying || snake.isDead) return; 
         isPaused = !isPaused;
