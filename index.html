@@ -10,13 +10,13 @@
             margin: 0; padding: 0; width: 100%; height: 100%;
             overflow: hidden; background-color: #1a1a2e;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            touch-action: none; /* 스크롤 및 줌 완전 차단 */
-            -webkit-user-select: none; /* 아이폰 텍스트 선택 방지 */
+            touch-action: none; 
+            -webkit-user-select: none; 
             user-select: none;
         }
         canvas { 
             display: block; 
-            touch-action: none; /* 캔버스 위 터치 동작 차단 */
+            touch-action: none; 
         }
         
         /* 인게임 우측 상단 UI */
@@ -101,9 +101,7 @@
 
     <div id="start-screen">
         <h1>🐍 Snake Action Arena</h1>
-        <div class="version-text">ver 1.02</div>
-        
-        <div class="menu-group">
+        <div class="version-text">ver 1.03</div> <div class="menu-group">
             <label for="nickname">Nickname</label>
             <input type="text" id="nickname" value="Player" maxlength="10">
         </div>
@@ -172,9 +170,8 @@
         canvas.width = window.innerWidth; canvas.height = window.innerHeight; 
     });
 
-    // 모바일 터치 처리 (스크롤 방지 포함)
     window.addEventListener('touchstart', (e) => {
-        if(e.target === canvas) e.preventDefault(); // 캔버스 터치 시 기본 동작(스크롤) 방지
+        if(e.target === canvas) e.preventDefault(); 
         mouse.x = e.touches[0].clientX;
         mouse.y = e.touches[0].clientY;
     }, { passive: false });
@@ -210,7 +207,6 @@
         }
     });
 
-    // --- 일시정지 로직 ---
     pauseBtn.addEventListener('click', () => {
         if (!isPlaying || snake.isDead) return; 
         isPaused = !isPaused;
@@ -348,8 +344,14 @@
 
         allSnakes.sort((a, b) => b.score - a.score);
         
+        // 브라우저의 너비가 768px 이하이거나, User-Agent에 모바일 식별자가 있다면 모바일로 간주
+        const isMobileEnv = window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
+        // 모바일 환경이면 4명, 아니면 10명 표시
+        const maxDisplayCount = isMobileEnv ? 4 : 10;
+        
         let html = '';
-        for (let i = 0; i < Math.min(10, allSnakes.length); i++) {
+        for (let i = 0; i < Math.min(maxDisplayCount, allSnakes.length); i++) {
             const s = allSnakes[i];
             const isMeClass = s.isPlayer ? 'class="my-rank"' : '';
             html += `<li ${isMeClass}>${s.name} <small>(${Math.floor(s.score)})</small></li>`;
