@@ -76,7 +76,7 @@
 
     <div id="start-screen">
         <h1>🐍 Snake Item Arena</h1>
-        <div class="version-text">ver 2.086 (Ultimate Engine Stabilizer)</div>
+        <div class="version-text">ver 2.087 (Ironclad Rendering)</div>
         
         <div class="menu-group">
             <label>Game Mode</label>
@@ -477,9 +477,9 @@
 
         function checkBodyCollision(x, y, radius, bodySnake, now) {
             if(!bodySnake || bodySnake.isDead || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(radius)) return false;
-            let hitRadius = bodySnake.radius * 0.8;
-            if (now && now < bodySnake.buffs.spike) hitRadius = bodySnake.radius * 4; 
-            for (let i = 0; i < Math.floor(bodySnake.tailLength); i++) {
+            let hitRadius = (bodySnake.radius || 15) * 0.8;
+            if (now && bodySnake.buffs && now < bodySnake.buffs.spike) hitRadius = (bodySnake.radius || 15) * 4; 
+            for (let i = 0; i < Math.floor(bodySnake.tailLength || 10); i++) {
                 const historyIndex = i * 4;
                 if (historyIndex < bodySnake.history.length) {
                     const pos = bodySnake.history[historyIndex];
@@ -497,7 +497,7 @@
             for (let tgt of allSnakes) {
                 if (tgt !== excludeEnemy && !tgt.isDead) {
                     if (checkBodyCollision(x, y, radius, tgt, now)) return true;
-                    if (now < tgt.buffs.spike && Math.hypot(x - tgt.x, y - tgt.y) < radius + tgt.radius * 4) return true;
+                    if (now < tgt.buffs.spike && Math.hypot(x - tgt.x, y - tgt.y) < radius + (tgt.radius||15) * 4) return true;
                 }
             }
             return false;
@@ -505,7 +505,7 @@
 
         function updateLeaderboard() {
             if(!allSnakes) return;
-            let sorted = [...allSnakes].sort((a, b) => b.score - a.score);
+            let sorted = [...allSnakes].filter(s => s != null).sort((a, b) => (b.score || 0) - (a.score || 0));
             const isMobileEnv = window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
             const maxDisp = isMobileEnv ? 4 : 10;
             
@@ -527,14 +527,14 @@
 
             if (deadSnake.isPlayer) {
                 broadcastSound('player_death');
-                lastPlayerDeathX = Math.max(100, Math.min(WORLD_SIZE - 100, deadSnake.x || WORLD_SIZE/2));
-                lastPlayerDeathY = Math.max(100, Math.min(WORLD_SIZE - 100, deadSnake.y || WORLD_SIZE/2));
+                lastPlayerDeathX = Math.max(100, Math.min(WORLD_SIZE - 100, Number.isFinite(deadSnake.x) ? deadSnake.x : WORLD_SIZE/2));
+                lastPlayerDeathY = Math.max(100, Math.min(WORLD_SIZE - 100, Number.isFinite(deadSnake.y) ? deadSnake.y : WORLD_SIZE/2));
                 setTimeout(() => showGameOver(deadSnake.score), 2000); 
             } else {
                 if(deadSnake.isRemotePlayer) {
                     broadcastSound('player_death');
-                    lastRemoteDeathX = Math.max(100, Math.min(WORLD_SIZE - 100, deadSnake.x || WORLD_SIZE/2));
-                    lastRemoteDeathY = Math.max(100, Math.min(WORLD_SIZE - 100, deadSnake.y || WORLD_SIZE/2));
+                    lastRemoteDeathX = Math.max(100, Math.min(WORLD_SIZE - 100, Number.isFinite(deadSnake.x) ? deadSnake.x : WORLD_SIZE/2));
+                    lastRemoteDeathY = Math.max(100, Math.min(WORLD_SIZE - 100, Number.isFinite(deadSnake.y) ? deadSnake.y : WORLD_SIZE/2));
                 } else {
                     broadcastSound('enemy_death');
                 }
@@ -542,12 +542,12 @@
              
             createExplosion(deadSnake.x, deadSnake.y, deadSnake.color, 40);
 
-            for (let i = 0; i < Math.floor(deadSnake.tailLength); i += 2) {
+            for (let i = 0; i < Math.floor(deadSnake.tailLength || 10); i += 2) {
                 const hIndex = i * 4;
                 if (hIndex < deadSnake.history.length) {
                     const pos = deadSnake.history[hIndex];
-                    if(pos && Number.isFinite(pos.x)) {
-                        spawnFood(pos.x, pos.y, true, deadSnake.radius * 0.8, true); 
+                    if(pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+                        spawnFood(pos.x, pos.y, true, (deadSnake.radius||15) * 0.8, true); 
                         createExplosion(pos.x, pos.y, deadSnake.color, 5); 
                     }
                 }
@@ -556,7 +556,8 @@
 
         function moveSnake(s, isInvincible) {
             if(!Number.isFinite(s.angle)) s.angle = 0;
-            if(!Number.isFinite(s.speed)) s.speed = s.baseSpeed;
+            if(!Number.isFinite(s.speed)) s.speed = s.baseSpeed || 4;
+            if(!Number.isFinite(s.radius)) s.radius = 15;
             
             s.x += Math.cos(s.angle) * s.speed; s.y += Math.sin(s.angle) * s.speed;
             
@@ -567,7 +568,11 @@
             s.x = Math.max(s.radius, Math.min(WORLD_SIZE - s.radius, s.x));
             s.y = Math.max(s.radius, Math.min(WORLD_SIZE - s.radius, s.y));
             s.history.unshift({ x: s.x, y: s.y });
+            
+            // 꼬리 무한루프 방어벽
+            if (!Number.isFinite(s.tailLength) || s.tailLength > 1000) s.tailLength = 1000;
             if (s.history.length > Math.floor(s.tailLength) * 4 + 10) s.history.pop();
+            
             return hitWall && !isInvincible; 
         }
 
@@ -578,228 +583,242 @@
                 if (Number.isFinite(f.customRadius) && f.customRadius > 10) { growthRate = f.customRadius*0.045; sizeIncrease = f.customRadius*0.02; scoreAdd = Math.floor(f.customRadius*5); } 
                 else { growthRate = 0.6; sizeIncrease = 0.2; scoreAdd = 50; }
             }
-            s.tailLength += growthRate; s.radius += sizeIncrease; if (s.radius > 60) s.radius = 60;
+            s.tailLength += growthRate; 
+            s.radius += sizeIncrease; 
+            // 반지름 무한대 방어벽
+            s.radius = Math.max(5, Math.min(60, s.radius));
             s.score += scoreAdd;
-            if (s.isPlayer) scoreElement.innerText = Math.floor(s.score);
+            
+            if (s.isPlayer && document.getElementById('score')) document.getElementById('score').innerText = Math.floor(s.score);
             if (foods.length < FOOD_COUNT) spawnFood(); 
         }
 
         function update() {
-            if (!isPlaying || isPaused || gameMode === 'client') return; 
+            try {
+                if (!isPlaying || isPaused || gameMode === 'client') return; 
 
-            const now = Date.now();
-            
-            allSnakes = [...enemies];
-            if (snake && !snake.isDead) allSnakes.push(snake);
-
-            if (!snake.isDead) {
-                let buffText = "";
-                if (now < snake.buffs.magnet) buffText += `<div class="buff-text buff-magnet">🧲 Magnet: ${Math.ceil((snake.buffs.magnet - now)/1000)}s</div>`;
-                if (now < snake.buffs.speed) buffText += `<div class="buff-text buff-speed">UP Speed: ${Math.ceil((snake.buffs.speed - now)/1000)}s</div>`;
-                if (now < snake.buffs.vision) buffText += `<div class="buff-text buff-vision">🔭 Vision: ${Math.ceil((snake.buffs.vision - now)/1000)}s</div>`;
-                if (now < snake.buffs.invincible) buffText += `<div class="buff-text buff-invincible">⭐ Invincible: ${Math.ceil((snake.buffs.invincible - now)/1000)}s</div>`;
-                if (now < snake.buffs.gun) buffText += `<div class="buff-text buff-gun">🔫 Gun: ${Math.ceil((snake.buffs.gun - now)/1000)}s</div>`;
-                if (now < snake.buffs.spike) buffText += `<div class="buff-text buff-spike">✹ Spikes: ${Math.ceil((snake.buffs.spike - now)/1000)}s</div>`;
-                buffStatusElement.innerHTML = buffText;
-
-                const isInv = now < snake.buffs.invincible;
-                snake.speed = (now < snake.buffs.speed) ? snake.baseSpeed * 1.3 : snake.baseSpeed;
-                if(gameMode !== 'client') snake.angle = mouse.angle; 
+                const now = Date.now();
                 
-                let playerHitWall = moveSnake(snake, isInv);
+                allSnakes = [...enemies];
+                if (snake && !snake.isDead) allSnakes.push(snake);
 
-                if (isInv) {
-                    for (let tgt of allSnakes) {
-                        if (tgt !== snake && !tgt.isDead && !(now < tgt.buffs.invincible)) {
-                            if (checkBodyCollision(snake.x, snake.y, snake.radius, tgt, now) || Math.hypot(snake.x - tgt.x, snake.y - tgt.y) < snake.radius + tgt.radius) {
-                                die(tgt);
+                if (!snake.isDead) {
+                    if (buffStatusElement) {
+                        let buffText = "";
+                        if (now < snake.buffs.magnet) buffText += `<div class="buff-text buff-magnet">🧲 Magnet: ${Math.ceil((snake.buffs.magnet - now)/1000)}s</div>`;
+                        if (now < snake.buffs.speed) buffText += `<div class="buff-text buff-speed">UP Speed: ${Math.ceil((snake.buffs.speed - now)/1000)}s</div>`;
+                        if (now < snake.buffs.vision) buffText += `<div class="buff-text buff-vision">🔭 Vision: ${Math.ceil((snake.buffs.vision - now)/1000)}s</div>`;
+                        if (now < snake.buffs.invincible) buffText += `<div class="buff-text buff-invincible">⭐ Invincible: ${Math.ceil((snake.buffs.invincible - now)/1000)}s</div>`;
+                        if (now < snake.buffs.gun) buffText += `<div class="buff-text buff-gun">🔫 Gun: ${Math.ceil((snake.buffs.gun - now)/1000)}s</div>`;
+                        if (now < snake.buffs.spike) buffText += `<div class="buff-text buff-spike">✹ Spikes: ${Math.ceil((snake.buffs.spike - now)/1000)}s</div>`;
+                        buffStatusElement.innerHTML = buffText;
+                    }
+
+                    const isInv = now < snake.buffs.invincible;
+                    snake.speed = (now < snake.buffs.speed) ? snake.baseSpeed * 1.3 : snake.baseSpeed;
+                    if(gameMode !== 'client') snake.angle = mouse.angle; 
+                    
+                    let playerHitWall = moveSnake(snake, isInv);
+
+                    if (isInv) {
+                        for (let tgt of allSnakes) {
+                            if (tgt !== snake && !tgt.isDead && !(now < tgt.buffs.invincible)) {
+                                if (checkBodyCollision(snake.x, snake.y, snake.radius, tgt, now) || Math.hypot(snake.x - tgt.x, snake.y - tgt.y) < snake.radius + tgt.radius) {
+                                    die(tgt);
+                                }
                             }
                         }
-                    }
-                } else {
-                    let collided = false;
-                    for (let tgt of allSnakes) {
-                        if (tgt !== snake && !tgt.isDead) {
-                            if (checkBodyCollision(snake.x, snake.y, snake.radius, tgt, now) || (now < tgt.buffs.spike && Math.hypot(snake.x - tgt.x, snake.y - tgt.y) < snake.radius + tgt.radius * 4)) {
-                                collided = true; break;
+                    } else {
+                        let collided = false;
+                        for (let tgt of allSnakes) {
+                            if (tgt !== snake && !tgt.isDead) {
+                                if (checkBodyCollision(snake.x, snake.y, snake.radius, tgt, now) || (now < tgt.buffs.spike && Math.hypot(snake.x - tgt.x, snake.y - tgt.y) < snake.radius + tgt.radius * 4)) {
+                                    collided = true; break;
+                                }
                             }
                         }
+                        if (playerHitWall || collided) die(snake); 
                     }
-                    if (playerHitWall || collided) die(snake); 
+
+                    if (!snake.isDead && now < snake.buffs.gun && now - snake.lastShootTime > 300) {
+                        bullets.push({ x: snake.x + Math.cos(snake.angle)*(snake.radius+5), y: snake.y + Math.sin(snake.angle)*(snake.radius+5), vx: Math.cos(snake.angle)*15, vy: Math.sin(snake.angle)*15, radius: 6, color: '#ff3300', owner: snake });
+                        snake.lastShootTime = now; broadcastSound('shoot'); 
+                    }
                 }
 
-                if (!snake.isDead && now < snake.buffs.gun && now - snake.lastShootTime > 300) {
-                    bullets.push({ x: snake.x + Math.cos(snake.angle)*(snake.radius+5), y: snake.y + Math.sin(snake.angle)*(snake.radius+5), vx: Math.cos(snake.angle)*15, vy: Math.sin(snake.angle)*15, radius: 6, color: '#ff3300', owner: snake });
-                    snake.lastShootTime = now; broadcastSound('shoot'); 
-                }
-            }
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    let enemy = enemies[i];
+                    if (enemy.isDead) continue;
 
-            for (let i = enemies.length - 1; i >= 0; i--) {
-                let enemy = enemies[i];
-                if (enemy.isDead) continue;
+                    if(!Number.isFinite(enemy.x)) enemy.x = WORLD_SIZE/2;
+                    if(!Number.isFinite(enemy.y)) enemy.y = WORLD_SIZE/2;
+                    if(!Number.isFinite(enemy.angle)) enemy.angle = 0;
 
-                if(!Number.isFinite(enemy.x)) enemy.x = WORLD_SIZE/2;
-                if(!Number.isFinite(enemy.y)) enemy.y = WORLD_SIZE/2;
-                if(!Number.isFinite(enemy.angle)) enemy.angle = 0;
+                    const isInv = now < enemy.buffs.invincible;
+                    enemy.speed = (now < enemy.buffs.speed) ? enemy.baseSpeed * 1.3 : enemy.baseSpeed;
 
-                const isInv = now < enemy.buffs.invincible;
-                enemy.speed = (now < enemy.buffs.speed) ? enemy.baseSpeed * 1.3 : enemy.baseSpeed;
+                    if (!enemy.isRemotePlayer) {
+                        if (!isInv) {
+                            let lookAhead = enemy.radius * 5; 
+                            let fX = enemy.x + Math.cos(enemy.angle) * lookAhead; let fY = enemy.y + Math.sin(enemy.angle) * lookAhead;
 
-                if (!enemy.isRemotePlayer) {
-                    if (!isInv) {
-                        let lookAhead = enemy.radius * 5; 
-                        let fX = enemy.x + Math.cos(enemy.angle) * lookAhead; let fY = enemy.y + Math.sin(enemy.angle) * lookAhead;
-
-                        if (isPositionDangerous(fX, fY, enemy.radius, enemy, now)) {
-                            if (!enemy.turnDirection) enemy.turnDirection = Math.random() < 0.5 ? 1 : -1;
-                            enemy.angle += enemy.turnDirection * 0.3; 
+                            if (isPositionDangerous(fX, fY, enemy.radius, enemy, now)) {
+                                if (!enemy.turnDirection) enemy.turnDirection = Math.random() < 0.5 ? 1 : -1;
+                                enemy.angle += enemy.turnDirection * 0.3; 
+                            } else {
+                                enemy.turnDirection = null; let target = null; let minDist = 400; 
+                                for (let obj of [...foods, ...items]) {
+                                    let d = Math.hypot(enemy.x - obj.x, enemy.y - obj.y);
+                                    if (d < minDist) { minDist = d; target = obj; }
+                                }
+                                if (target && Number.isFinite(target.x) && Number.isFinite(target.y)) {
+                                    let aDiff = Math.atan2(target.y - enemy.y, target.x - enemy.x) - enemy.angle;
+                                    aDiff = Math.atan2(Math.sin(aDiff), Math.cos(aDiff)) || 0;
+                                    enemy.angle += Math.max(-0.06, Math.min(0.06, aDiff)); 
+                                } else { enemy.angle += (Math.random() - 0.5) * 0.1; }
+                            }
                         } else {
-                            enemy.turnDirection = null; let target = null; let minDist = 400; 
+                            let target = null; let minDist = 800; 
                             for (let obj of [...foods, ...items]) {
                                 let d = Math.hypot(enemy.x - obj.x, enemy.y - obj.y);
                                 if (d < minDist) { minDist = d; target = obj; }
                             }
-                            if (target && Number.isFinite(target.x) && Number.isFinite(target.y)) {
+                            if (target) {
                                 let aDiff = Math.atan2(target.y - enemy.y, target.x - enemy.x) - enemy.angle;
-                                aDiff = Math.atan2(Math.sin(aDiff), Math.cos(aDiff)) || 0;
-                                enemy.angle += Math.max(-0.06, Math.min(0.06, aDiff)); 
-                            } else { enemy.angle += (Math.random() - 0.5) * 0.1; }
+                                aDiff = Math.atan2(Math.sin(aDiff), Math.cos(aDiff));
+                                enemy.angle += Math.max(-0.08, Math.min(0.08, aDiff)); 
+                            }
+                        }
+                    }
+
+                    let enemyHitWall = moveSnake(enemy, isInv);
+
+                    if (isInv) {
+                        for (let tgt of allSnakes) {
+                            if (tgt !== enemy && !tgt.isDead && !(now < tgt.buffs.invincible)) {
+                                if (checkBodyCollision(enemy.x, enemy.y, enemy.radius, tgt, now) || Math.hypot(enemy.x - tgt.x, enemy.y - tgt.y) < enemy.radius + tgt.radius) {
+                                    die(tgt); 
+                                }
+                            }
                         }
                     } else {
-                        let target = null; let minDist = 800; 
-                        for (let obj of [...foods, ...items]) {
-                            let d = Math.hypot(enemy.x - obj.x, enemy.y - obj.y);
-                            if (d < minDist) { minDist = d; target = obj; }
+                        let collided = false;
+                        for (let tgt of allSnakes) {
+                            if (tgt !== enemy && !tgt.isDead) {
+                                if (checkBodyCollision(enemy.x, enemy.y, enemy.radius, tgt, now) || (now < tgt.buffs.spike && Math.hypot(enemy.x - tgt.x, enemy.y - tgt.y) < enemy.radius + tgt.radius * 4)) {
+                                    collided = true; break;
+                                }
+                            }
                         }
-                        if (target) {
-                            let aDiff = Math.atan2(target.y - enemy.y, target.x - enemy.x) - enemy.angle;
-                            aDiff = Math.atan2(Math.sin(aDiff), Math.cos(aDiff));
-                            enemy.angle += Math.max(-0.08, Math.min(0.08, aDiff)); 
-                        }
+                        if (enemyHitWall || collided) die(enemy);
+                    }
+
+                    if (!enemy.isDead && now < enemy.buffs.gun && now - enemy.lastShootTime > 300) {
+                        bullets.push({ x: enemy.x + Math.cos(enemy.angle)*(enemy.radius+5), y: enemy.y + Math.sin(enemy.angle)*(enemy.radius+5), vx: Math.cos(enemy.angle)*15, vy: Math.sin(enemy.angle)*15, radius: 6, color: '#ff3300', owner: enemy });
+                        enemy.lastShootTime = now;
+                        if(enemy.isRemotePlayer) broadcastSound('shoot');
                     }
                 }
 
-                let enemyHitWall = moveSnake(enemy, isInv);
-
-                if (isInv) {
-                    for (let tgt of allSnakes) {
-                        if (tgt !== enemy && !tgt.isDead && !(now < tgt.buffs.invincible)) {
-                            if (checkBodyCollision(enemy.x, enemy.y, enemy.radius, tgt, now) || Math.hypot(enemy.x - tgt.x, enemy.y - tgt.y) < enemy.radius + tgt.radius) {
-                                die(tgt); 
+                for (let i = 0; i < allSnakes.length; i++) {
+                    let s1 = allSnakes[i];
+                    if (s1.isDead) continue;
+                    if (now < s1.buffs.spike) {
+                        for (let j = 0; j < allSnakes.length; j++) {
+                            if (i === j) continue; let s2 = allSnakes[j];
+                            if (s2.isDead || now < s2.buffs.invincible) continue; 
+                            
+                            if (checkBodyCollision(s2.x, s2.y, s2.radius, s1, now) || Math.hypot(s2.x - s1.x, s2.y - s1.y) < s2.radius + s1.radius * 4) {
+                                die(s2);
                             }
                         }
                     }
-                } else {
-                    let collided = false;
-                    for (let tgt of allSnakes) {
-                        if (tgt !== enemy && !tgt.isDead) {
-                            if (checkBodyCollision(enemy.x, enemy.y, enemy.radius, tgt, now) || (now < tgt.buffs.spike && Math.hypot(enemy.x - tgt.x, enemy.y - tgt.y) < enemy.radius + tgt.radius * 4)) {
-                                collided = true; break;
-                            }
-                        }
-                    }
-                    if (enemyHitWall || collided) die(enemy);
                 }
 
-                if (!enemy.isDead && now < enemy.buffs.gun && now - enemy.lastShootTime > 300) {
-                    bullets.push({ x: enemy.x + Math.cos(enemy.angle)*(enemy.radius+5), y: enemy.y + Math.sin(enemy.angle)*(enemy.radius+5), vx: Math.cos(enemy.angle)*15, vy: Math.sin(enemy.angle)*15, radius: 6, color: '#ff3300', owner: enemy });
-                    enemy.lastShootTime = now;
-                    if(enemy.isRemotePlayer) broadcastSound('shoot');
-                }
-            }
+                for (let i = bullets.length - 1; i >= 0; i--) {
+                    let b = bullets[i]; b.x += b.vx; b.y += b.vy;
+                    if (!Number.isFinite(b.x) || !Number.isFinite(b.y) || b.x < 0 || b.x > WORLD_SIZE || b.y < 0 || b.y > WORLD_SIZE) { bullets.splice(i, 1); continue; }
 
-            for (let i = 0; i < allSnakes.length; i++) {
-                let s1 = allSnakes[i];
-                if (s1.isDead) continue;
-                if (now < s1.buffs.spike) {
+                    let hit = false;
                     for (let j = 0; j < allSnakes.length; j++) {
-                        if (i === j) continue; let s2 = allSnakes[j];
-                        if (s2.isDead || now < s2.buffs.invincible) continue; 
-                        
-                        if (checkBodyCollision(s2.x, s2.y, s2.radius, s1, now) || Math.hypot(s2.x - s1.x, s2.y - s1.y) < s2.radius + s1.radius * 4) {
-                            die(s2);
+                        let tgt = allSnakes[j];
+                        if (tgt.isDead || b.owner === tgt) continue;
+                        if (Math.hypot(b.x - tgt.x, b.y - tgt.y) < b.radius + tgt.radius || checkBodyCollision(b.x, b.y, b.radius, tgt, now)) {
+                            if (!(now < tgt.buffs.invincible)) die(tgt);
+                            createExplosion(b.x, b.y, '#ff3300', 10); hit = true; break;
                         }
                     }
+                    if (hit) bullets.splice(i, 1);
                 }
-            }
 
-            for (let i = bullets.length - 1; i >= 0; i--) {
-                let b = bullets[i]; b.x += b.vx; b.y += b.vy;
-                if (!Number.isFinite(b.x) || !Number.isFinite(b.y) || b.x < 0 || b.x > WORLD_SIZE || b.y < 0 || b.y > WORLD_SIZE) { bullets.splice(i, 1); continue; }
-
-                let hit = false;
-                for (let j = 0; j < allSnakes.length; j++) {
-                    let tgt = allSnakes[j];
-                    if (tgt.isDead || b.owner === tgt) continue;
-                    if (Math.hypot(b.x - tgt.x, b.y - tgt.y) < b.radius + tgt.radius || checkBodyCollision(b.x, b.y, b.radius, tgt, now)) {
-                        if (!(now < tgt.buffs.invincible)) die(tgt);
-                        createExplosion(b.x, b.y, '#ff3300', 10); hit = true; break;
+                for (let i = items.length - 1; i >= 0; i--) {
+                    let pickedUp = false;
+                    for (let s of allSnakes) {
+                        if (!s.isDead && Math.hypot(s.x - items[i].x, s.y - items[i].y) < s.radius + items[i].radius) {
+                            s.buffs[items[i].type] = now + 10000; pickedUp = true;
+                            if (s.isPlayer || s.isRemotePlayer) broadcastSound('item'); break;
+                        }
                     }
+                    if (pickedUp) items.splice(i, 1);
                 }
-                if (hit) bullets.splice(i, 1);
-            }
 
-            for (let i = items.length - 1; i >= 0; i--) {
-                let pickedUp = false;
-                for (let s of allSnakes) {
-                    if (!s.isDead && Math.hypot(s.x - items[i].x, s.y - items[i].y) < s.radius + items[i].radius) {
-                        s.buffs[items[i].type] = now + 10000; pickedUp = true;
-                        if (s.isPlayer || s.isRemotePlayer) broadcastSound('item'); break;
+                for (let i = foods.length - 1; i >= 0; i--) {
+                    let f = foods[i];
+                    for (let s of allSnakes) {
+                        if (!s.isDead && now < s.buffs.magnet && Math.hypot(s.x - f.x, s.y - f.y) < 250) {
+                            let a = Math.atan2(s.y - f.y, s.x - f.x) || 0; f.x += Math.cos(a) * 8; f.y += Math.sin(a) * 8;
+                        }
                     }
-                }
-                if (pickedUp) items.splice(i, 1);
-            }
-
-            for (let i = foods.length - 1; i >= 0; i--) {
-                let f = foods[i];
-                for (let s of allSnakes) {
-                    if (!s.isDead && now < s.buffs.magnet && Math.hypot(s.x - f.x, s.y - f.y) < 250) {
-                        let a = Math.atan2(s.y - f.y, s.x - f.x) || 0; f.x += Math.cos(a) * 8; f.y += Math.sin(a) * 8;
+                    let eaten = false;
+                    for (let s of allSnakes) {
+                        if (!s.isDead && Math.hypot(s.x - f.x, s.y - f.y) < s.radius + f.radius) {
+                            eatFood(s, f, i); eaten = true; break;
+                        }
                     }
+                    if (eaten) continue;
                 }
-                let eaten = false;
-                for (let s of allSnakes) {
-                    if (!s.isDead && Math.hypot(s.x - f.x, s.y - f.y) < s.radius + f.radius) {
-                        eatFood(s, f, i); eaten = true; break;
-                    }
+
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    let p = particles[i];
+                    p.x += p.vx; p.y += p.vy; p.life -= p.decay; p.radius *= 0.95; 
+                    if (p.life <= 0 || p.radius < 0.5) particles.splice(i, 1);
                 }
-                if (eaten) continue;
-            }
 
-            for (let i = particles.length - 1; i >= 0; i--) {
-                let p = particles[i];
-                p.x += p.vx; p.y += p.vy; p.life -= p.decay; p.radius *= 0.95; 
-                if (p.life <= 0 || p.radius < 0.5) particles.splice(i, 1);
-            }
-
-            enemies = enemies.filter(e => !e.isDead);
-            allSnakes = allSnakes.filter(s => !s.isDead);
-            
-            if (gameMode !== 'client') {
-                let botCount = enemies.filter(e => !e.isRemotePlayer).length;
-                if (botCount < targetEnemyCount) {
-                    enemySpawnTimer++;
-                    if (enemySpawnTimer > 60) { 
-                        const diff = document.getElementById('difficulty').value;
-                        spawnEnemy(diff === 'hard' ? 4.8 : (diff === 'easy' ? 3.5 : 4));
+                enemies = enemies.filter(e => !e.isDead);
+                allSnakes = allSnakes.filter(s => !s.isDead);
+                
+                if (gameMode !== 'client') {
+                    let botCount = enemies.filter(e => !e.isRemotePlayer).length;
+                    if (botCount < targetEnemyCount) {
+                        enemySpawnTimer++;
+                        if (enemySpawnTimer > 60) { 
+                            const diff = document.getElementById('difficulty') ? document.getElementById('difficulty').value : 'normal';
+                            spawnEnemy(diff === 'hard' ? 4.8 : (diff === 'easy' ? 3.5 : 4));
+                            enemySpawnTimer = 0;
+                        }
+                    } else {
                         enemySpawnTimer = 0;
                     }
-                } else {
-                    enemySpawnTimer = 0;
                 }
-            }
 
-            if(gameMode !== 'client') updateLeaderboard();
+                if(gameMode !== 'client') updateLeaderboard();
 
-            if (gameMode === 'host' && p2pConnection) {
-                p2pConnection.send({
-                    type: 'state', hostSnake: snake, enemies: enemies, foods: foods, items: items, bullets: bullets, particles: particles
-                });
+                if (gameMode === 'host' && p2pConnection) {
+                    p2pConnection.send({
+                        type: 'state', hostSnake: snake, enemies: enemies, foods: foods, items: items, bullets: bullets, particles: particles
+                    });
+                }
+            } catch(e) {
+                console.error("Update Block Error:", e);
             }
         }
 
+        // ==============================================================
+        // 2.087 렌더링 최적화 및 무한 루프 차단 철통 방어
+        // ==============================================================
         function draw() {
             try {
+                // 어떤 에러가 나더라도 무조건 시점 초기화로 시작
                 ctx.setTransform(1, 0, 0, 1, 0, 0);
                 if (!canvas.width || !canvas.height) resizeCanvas();
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -810,7 +829,10 @@
                 let targetZoom = 1.0;
                 if (snake && !snake.isDead && time < snake.buffs.vision) targetZoom = 1 / 1.5;
                 if (!isPaused && isPlaying) currentZoom += (targetZoom - currentZoom) * 0.05;
-                if (!Number.isFinite(currentZoom) || currentZoom <= 0) currentZoom = 1.0;
+                
+                // 줌 팩터가 무한대가 되거나 0이 되는 것을 원천 차단 (가장 강력한 보호막)
+                if (!Number.isFinite(currentZoom)) currentZoom = 1.0;
+                currentZoom = Math.max(0.3, Math.min(2.0, currentZoom));
 
                 ctx.save();
                 
@@ -825,31 +847,29 @@
                     ctx.translate(-camX, -camY);
                 }
 
+                // 무한 루프를 유발했던 카메라 추적식 바둑판 그리기를 버리고, 
+                // 월드 맵 크기(3000)만큼만 고정 렌더링하는 절대 안전 방식을 적용합니다.
                 ctx.strokeStyle = '#2a2a4e'; ctx.lineWidth = 2; const gridSize = 100;
-                if(snake) {
-                    const visW = canvas.width / currentZoom; const visH = canvas.height / currentZoom;
-                    let camX = (snake.isDead ? lastPlayerDeathX : snake.x) || WORLD_SIZE/2;
-                    let camY = (snake.isDead ? lastPlayerDeathY : snake.y) || WORLD_SIZE/2;
-                    let vL = camX - visW / 2; let vT = camY - visH / 2;
-                    if(Number.isFinite(vL) && Number.isFinite(vT)) {
-                        for (let x = Math.floor(vL/gridSize)*gridSize - gridSize; x < vL + visW + gridSize; x += gridSize) { ctx.beginPath(); ctx.moveTo(x, vT - gridSize); ctx.lineTo(x, vT + visH + gridSize); ctx.stroke(); }
-                        for (let y = Math.floor(vT/gridSize)*gridSize - gridSize; y < vT + visH + gridSize; y += gridSize) { ctx.beginPath(); ctx.moveTo(vL - gridSize, y); ctx.lineTo(vL + visW + gridSize, y); ctx.stroke(); }
-                    }
+                for (let x = 0; x <= WORLD_SIZE; x += gridSize) { 
+                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, WORLD_SIZE); ctx.stroke(); 
+                }
+                for (let y = 0; y <= WORLD_SIZE; y += gridSize) { 
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WORLD_SIZE, y); ctx.stroke(); 
                 }
                 
                 ctx.strokeStyle = '#ff3333'; ctx.lineWidth = 15; ctx.strokeRect(0, 0, WORLD_SIZE, WORLD_SIZE);
 
                 particles.forEach(p => { 
                     if(!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(p.radius)) return;
-                    ctx.globalAlpha = Math.max(0, p.life); ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fillStyle = p.color; ctx.shadowBlur = 10; ctx.shadowColor = p.color; ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1.0; 
+                    ctx.globalAlpha = Math.max(0, p.life); ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.1, p.radius), 0, Math.PI * 2); ctx.fillStyle = p.color; ctx.shadowBlur = 10; ctx.shadowColor = p.color; ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1.0; 
                 });
                 bullets.forEach(b => { 
                     if(!Number.isFinite(b.x)||!Number.isFinite(b.y)||!Number.isFinite(b.radius)) return;
-                    ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.fillStyle = b.color; ctx.shadowBlur = 15; ctx.shadowColor = '#ffff00'; ctx.fill(); ctx.shadowBlur = 0; 
+                    ctx.beginPath(); ctx.arc(b.x, b.y, Math.max(0.1, b.radius), 0, Math.PI * 2); ctx.fillStyle = b.color; ctx.shadowBlur = 15; ctx.shadowColor = '#ffff00'; ctx.fill(); ctx.shadowBlur = 0; 
                 });
                 items.forEach(item => {
                     if(!Number.isFinite(item.x)||!Number.isFinite(item.y)||!Number.isFinite(item.radius)) return;
-                    const spk = Math.abs(Math.sin(time / 200)); ctx.beginPath(); ctx.arc(item.x, item.y, item.radius, 0, Math.PI * 2);
+                    const spk = Math.abs(Math.sin(time / 200)); ctx.beginPath(); ctx.arc(item.x, item.y, Math.max(0.1, item.radius), 0, Math.PI * 2);
                     ctx.fillStyle = item.type==='magnet'?'#3498db':item.type==='speed'?'#f1c40f':item.type==='vision'?'#9b59b6':item.type==='invincible'?'#f39c12':item.type==='gun'?'#e74c3c':'#95a5a6';
                     ctx.shadowBlur = 10 + 20 * spk; ctx.shadowColor = 'white'; ctx.fill(); ctx.shadowBlur = 0;
                     let iconText = item.type==='magnet'?'🧲':item.type==='speed'?'UP':item.type==='vision'?'🔭':item.type==='invincible'?'⭐':item.type==='gun'?'🔫':'✹';
@@ -860,10 +880,10 @@
                     if(!Number.isFinite(f.x)||!Number.isFinite(f.y)||!Number.isFinite(f.radius)) return;
                     ctx.beginPath(); 
                     if (f.isCorpse) {
-                        const spk = Math.abs(Math.sin((isPaused?0:time) / 150 + f.x)); ctx.arc(f.x, f.y, f.radius + (spk * 2), 0, Math.PI * 2); 
+                        const spk = Math.abs(Math.sin((isPaused?0:time) / 150 + f.x)); ctx.arc(f.x, f.y, Math.max(0.1, f.radius + (spk * 2)), 0, Math.PI * 2); 
                         ctx.fillStyle = f.color; ctx.shadowBlur = 15 + 15 * spk; ctx.shadowColor = 'white'; 
                     } else {
-                        ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2); ctx.fillStyle = f.color; ctx.shadowBlur = f.isBig ? 15 : 5; ctx.shadowColor = f.color; 
+                        ctx.arc(f.x, f.y, Math.max(0.1, f.radius), 0, Math.PI * 2); ctx.fillStyle = f.color; ctx.shadowBlur = f.isBig ? 15 : 5; ctx.shadowColor = f.color; 
                     }
                     ctx.fill(); ctx.shadowBlur = 0;
                 });
@@ -871,61 +891,70 @@
                 const myName = document.getElementById('nickname') ? document.getElementById('nickname').value : 'Player';
 
                 const drawSnake = (s) => {
-                    if (s.isDead || !Number.isFinite(s.x) || !Number.isFinite(s.y) || !Number.isFinite(s.radius)) return;
-                    const isInv = (time < s.buffs.invincible); const invSpk = isInv ? Math.abs(Math.sin(time / 100)) : 0; const isSpk = (time < s.buffs.spike);
+                    try {
+                        if (s.isDead || !Number.isFinite(s.x) || !Number.isFinite(s.y) || !Number.isFinite(s.radius)) return;
+                        const isInv = (time < s.buffs.invincible); const invSpk = isInv ? Math.abs(Math.sin(time / 100)) : 0; const isSpk = (time < s.buffs.spike);
+                        const safeRadius = Math.max(1, s.radius);
 
-                    if (s.history) {
-                        for (let i = Math.floor(s.tailLength) - 1; i >= 0; i--) {
-                            const hIdx = i * 4; 
-                            if (hIdx < s.history.length) {
-                                const pos = s.history[hIdx];
-                                if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) continue;
-                                if (isSpk && i % 2 === 0) {
-                                    ctx.strokeStyle = '#bdc3c7'; ctx.lineWidth = 4; ctx.beginPath();
-                                    for(let j=0; j<4; j++) { let ang = (Math.PI / 4) * j + (time / 500); let dx = Math.cos(ang)*(s.radius*4); let dy = Math.sin(ang)*(s.radius*4); ctx.moveTo(pos.x-dx, pos.y-dy); ctx.lineTo(pos.x+dx, pos.y+dy); } ctx.stroke();
+                        if (s.history) {
+                            for (let i = Math.floor(s.tailLength || 10) - 1; i >= 0; i--) {
+                                const hIdx = i * 4; 
+                                if (hIdx < s.history.length) {
+                                    const pos = s.history[hIdx];
+                                    if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) continue;
+                                    if (isSpk && i % 2 === 0) {
+                                        ctx.strokeStyle = '#bdc3c7'; ctx.lineWidth = 4; ctx.beginPath();
+                                        for(let j=0; j<4; j++) { let ang = (Math.PI / 4) * j + (time / 500); let dx = Math.cos(ang)*(safeRadius*4); let dy = Math.sin(ang)*(safeRadius*4); ctx.moveTo(pos.x-dx, pos.y-dy); ctx.lineTo(pos.x+dx, pos.y+dy); } ctx.stroke();
+                                    }
+                                    ctx.beginPath(); ctx.arc(pos.x, pos.y, safeRadius * 0.9, 0, Math.PI * 2);
+                                    ctx.fillStyle = i % 2 === 0 ? (s.name === myName ? '#cc5555' : '#444') : (s.color || '#fff');
+                                    if (isInv) { ctx.shadowBlur = 20 * invSpk; ctx.shadowColor = '#ffff00'; } ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
                                 }
-                                ctx.beginPath(); ctx.arc(pos.x, pos.y, s.radius * 0.9, 0, Math.PI * 2);
-                                ctx.fillStyle = i % 2 === 0 ? (s.name === myName ? '#cc5555' : '#444') : s.color;
-                                if (isInv) { ctx.shadowBlur = 20 * invSpk; ctx.shadowColor = '#ffff00'; } ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
                             }
                         }
-                    }
-                    
-                    if (isSpk) {
-                        ctx.strokeStyle = '#bdc3c7'; ctx.lineWidth = 4; ctx.beginPath();
-                        for(let j=0; j<4; j++) { let ang = (Math.PI / 4) * j + (time / 500); let dx = Math.cos(ang)*(s.radius*4); let dy = Math.sin(ang)*(s.radius*4); ctx.moveTo(s.x-dx, s.y-dy); ctx.lineTo(s.x+dx, s.y+dy); } ctx.stroke();
-                    }
+                        
+                        if (isSpk) {
+                            ctx.strokeStyle = '#bdc3c7'; ctx.lineWidth = 4; ctx.beginPath();
+                            for(let j=0; j<4; j++) { let ang = (Math.PI / 4) * j + (time / 500); let dx = Math.cos(ang)*(safeRadius*4); let dy = Math.sin(ang)*(safeRadius*4); ctx.moveTo(s.x-dx, s.y-dy); ctx.lineTo(s.x+dx, s.y+dy); } ctx.stroke();
+                        }
 
-                    ctx.beginPath(); ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2); ctx.fillStyle = s.color; 
-                    if (isInv) { ctx.shadowBlur = 20 * invSpk; ctx.shadowColor = '#ffff00'; } ctx.fill(); ctx.shadowBlur = 0; ctx.stroke();
-                    
-                    let sAngle = Number.isFinite(s.angle) ? s.angle : 0;
-                    const eOff = s.radius * 0.5; const eRad = s.radius * 0.25;
-                    ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(s.x+Math.cos(sAngle-0.5)*eOff, s.y+Math.sin(sAngle-0.5)*eOff, eRad, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(s.x+Math.cos(sAngle+0.5)*eOff, s.y+Math.sin(sAngle+0.5)*eOff, eRad, 0, Math.PI*2); ctx.fill();
-                    ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(s.x+Math.cos(sAngle-0.5)*eOff, s.y+Math.sin(sAngle-0.5)*eOff, eRad/2, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(s.x+Math.cos(sAngle+0.5)*eOff, s.y+Math.sin(sAngle+0.5)*eOff, eRad/2, 0, Math.PI*2); ctx.fill();
+                        ctx.beginPath(); ctx.arc(s.x, s.y, safeRadius, 0, Math.PI * 2); ctx.fillStyle = s.color || '#fff'; 
+                        if (isInv) { ctx.shadowBlur = 20 * invSpk; ctx.shadowColor = '#ffff00'; } ctx.fill(); ctx.shadowBlur = 0; ctx.stroke();
+                        
+                        let sAngle = Number.isFinite(s.angle) ? s.angle : 0;
+                        const eOff = safeRadius * 0.5; const eRad = Math.max(0.1, safeRadius * 0.25);
+                        ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(s.x+Math.cos(sAngle-0.5)*eOff, s.y+Math.sin(sAngle-0.5)*eOff, eRad, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(s.x+Math.cos(sAngle+0.5)*eOff, s.y+Math.sin(sAngle+0.5)*eOff, eRad, 0, Math.PI*2); ctx.fill();
+                        ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(s.x+Math.cos(sAngle-0.5)*eOff, s.y+Math.sin(sAngle-0.5)*eOff, eRad/2, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(s.x+Math.cos(sAngle+0.5)*eOff, s.y+Math.sin(sAngle+0.5)*eOff, eRad/2, 0, Math.PI*2); ctx.fill();
 
-                    ctx.fillStyle = 'white'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.lineWidth = 3; ctx.strokeStyle = 'black';
-                    ctx.strokeText(s.name, s.x, s.y - s.radius - 8); ctx.fillText(s.name, s.x, s.y - s.radius - 8);
+                        ctx.fillStyle = 'white'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.lineWidth = 3; ctx.strokeStyle = 'black';
+                        ctx.strokeText(s.name || 'Bot', s.x, s.y - safeRadius - 8); ctx.fillText(s.name || 'Bot', s.x, s.y - safeRadius - 8);
 
-                    let aIcons = [];
-                    if (s.buffs.magnet > time) aIcons.push(`🧲 ${Math.ceil((s.buffs.magnet - time)/1000)}`);
-                    if (s.buffs.speed > time) aIcons.push(`UP ${Math.ceil((s.buffs.speed - time)/1000)}`);
-                    if (s.buffs.vision > time) aIcons.push(`🔭 ${Math.ceil((s.buffs.vision - time)/1000)}`);
-                    if (s.buffs.invincible > time) aIcons.push(`⭐ ${Math.ceil((s.buffs.invincible - time)/1000)}`);
-                    if (s.buffs.gun > time) aIcons.push(`🔫 ${Math.ceil((s.buffs.gun - time)/1000)}`);
-                    if (s.buffs.spike > time) aIcons.push(`✹ ${Math.ceil((s.buffs.spike - time)/1000)}`);
+                        let aIcons = [];
+                        if (s.buffs.magnet > time) aIcons.push(`🧲 ${Math.ceil((s.buffs.magnet - time)/1000)}`);
+                        if (s.buffs.speed > time) aIcons.push(`UP ${Math.ceil((s.buffs.speed - time)/1000)}`);
+                        if (s.buffs.vision > time) aIcons.push(`🔭 ${Math.ceil((s.buffs.vision - time)/1000)}`);
+                        if (s.buffs.invincible > time) aIcons.push(`⭐ ${Math.ceil((s.buffs.invincible - time)/1000)}`);
+                        if (s.buffs.gun > time) aIcons.push(`🔫 ${Math.ceil((s.buffs.gun - time)/1000)}`);
+                        if (s.buffs.spike > time) aIcons.push(`✹ ${Math.ceil((s.buffs.spike - time)/1000)}`);
 
-                    if (aIcons.length > 0) {
-                        ctx.font = 'bold 40px Arial'; ctx.fillStyle = '#ffff00';
-                        aIcons.forEach((text, idx) => { let yPos = s.y - s.radius - 40 - (idx * 45); ctx.strokeText(text, s.x, yPos); ctx.fillText(text, s.x, yPos); });
+                        if (aIcons.length > 0) {
+                            ctx.font = 'bold 40px Arial'; ctx.fillStyle = '#ffff00';
+                            aIcons.forEach((text, idx) => { let yPos = s.y - safeRadius - 40 - (idx * 45); ctx.strokeText(text, s.x, yPos); ctx.fillText(text, s.x, yPos); });
+                        }
+                    } catch(e) {
+                        // 특정 뱀의 데이터가 손상되어도 이 뱀만 스킵하고 화면 전체 렌더링은 보호합니다.
+                        console.error("Single Snake Draw Error", e);
                     }
                 };
 
-                if (allSnakes) allSnakes.forEach(drawSnake);
+                if (allSnakes) {
+                    allSnakes.forEach(drawSnake);
+                }
 
             } catch(e) {
                 console.error("Render block error: ", e);
             } finally {
+                // 어떤 에러가 나더라도 무조건 캔버스 저장 상태를 원래대로 복구시킵니다.
                 ctx.restore();
             }
 
