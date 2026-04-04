@@ -76,7 +76,7 @@
 
     <div id="start-screen">
         <h1>🐍 Snake Item Arena</h1>
-        <div class="version-text">ver 2.082 (Core Engine Fix)</div>
+        <div class="version-text">ver 2.083 (Active Spawner & Anti-Blackscreen)</div>
         
         <div class="menu-group">
             <label>Game Mode</label>
@@ -180,6 +180,10 @@
 
         let lastPlayerDeathX = WORLD_SIZE / 2;
         let lastPlayerDeathY = WORLD_SIZE / 2;
+
+        // 2.083 스포너 시스템 변수
+        let targetEnemyCount = 10;
+        let enemySpawnTimer = 0;
 
         let audioCtx;
         const explosionSound = new Audio('explosion.mp3');
@@ -334,7 +338,7 @@
                 p2pConnection.send({ type: 'init', nickname: nickname, color: skinColor });
 
                 startScreen.style.display = 'none'; uiLayer.style.display = 'flex'; controlsLayer.style.display = 'flex'; 
-                isPlaying = true;
+                isPlaying = true; resizeCanvas();
                 
                 p2pConnection.on('data', data => {
                     if (data.type === 'state') {
@@ -373,7 +377,10 @@
             gameMode = mode;
             const nickname = document.getElementById('nickname').value || 'Player';
             const skinColor = document.getElementById('skin-color').value;
-            let enemyCount = (gameMode === 'host') ? 15 : 10; 
+            
+            // 스포너 설정
+            targetEnemyCount = (gameMode === 'host') ? 15 : 10; 
+            enemySpawnTimer = 0;
 
             foods = []; enemies = []; items = []; particles = []; bullets = [];
             isPaused = false; pauseBtn.innerText = "⏸ Pause"; clearInterval(itemSpawnInterval);
@@ -388,7 +395,7 @@
             }
 
             for (let i = 0; i < FOOD_COUNT; i++) spawnFood();
-            for (let i = 0; i < enemyCount; i++) spawnEnemy(4);
+            for (let i = 0; i < targetEnemyCount; i++) spawnEnemy(4);
 
             itemSpawnInterval = setInterval(spawnItem, 5000);
 
@@ -513,11 +520,11 @@
         }
 
         // ==============================================================
-        // 2.082 핵심 수정: 사망 즉시 삭제(splice)를 전면 금지하고 isDead 상태로 관리!
+        // 2.083 핵심 수정: 꼬임 방지를 위해 즉시 삭제 및 setTimeout 전면 폐지
         // ==============================================================
         function die(deadSnake) {
             if (deadSnake.isDead) return;
-            deadSnake.isDead = true; // 사망 꼬리표 부착
+            deadSnake.isDead = true; 
 
             if (deadSnake.isPlayer) {
                 broadcastSound('player_death');
@@ -540,11 +547,6 @@
                         createExplosion(pos.x, pos.y, deadSnake.color, 5); 
                     }
                 }
-            }
-            
-            if (!deadSnake.isPlayer && !deadSnake.isRemotePlayer) {
-                const diff = document.getElementById('difficulty').value;
-                setTimeout(() => { if (!isPaused && isPlaying) spawnEnemy(diff === 'hard' ? 4.8 : (diff === 'easy' ? 3.5 : 4)); }, 2000); 
             }
         }
 
@@ -601,9 +603,7 @@
                 const isInv = now < enemy.buffs.invincible;
                 enemy.speed = (now < enemy.buffs.speed) ? enemy.baseSpeed * 1.3 : enemy.baseSpeed;
 
-                if (enemy.isRemotePlayer) {
-                    // 통신으로만 각도 결정
-                } else {
+                if (!enemy.isRemotePlayer) {
                     if (!isInv) {
                         let lookAhead = enemy.radius * 5; 
                         let fX = enemy.x + Math.cos(enemy.angle) * lookAhead; let fY = enemy.y + Math.sin(enemy.angle) * lookAhead;
@@ -733,8 +733,23 @@
                 if (p.life <= 0 || p.radius < 0.5) particles.splice(i, 1);
             }
 
-            // 모든 연산과 판정이 완전히 끝난 뒤에 죽은 뱀들을 배열에서 일괄 삭제 (배열 꼬임 완벽 방지)
+            // 모든 연산이 끝나고 배열을 안전하게 정리
             enemies = enemies.filter(e => !e.isDead);
+            
+            // 2.083 핵심: 적 부활을 담당하는 무적의 자동 스포너!
+            if (gameMode !== 'client') {
+                let botCount = enemies.filter(e => !e.isRemotePlayer).length;
+                if (botCount < targetEnemyCount) {
+                    enemySpawnTimer++;
+                    if (enemySpawnTimer > 60) { // 약 1초 대기 후 즉시 생성
+                        const diff = document.getElementById('difficulty').value;
+                        spawnEnemy(diff === 'hard' ? 4.8 : (diff === 'easy' ? 3.5 : 4));
+                        enemySpawnTimer = 0;
+                    }
+                } else {
+                    enemySpawnTimer = 0;
+                }
+            }
 
             if(gameMode !== 'client') updateLeaderboard();
 
@@ -745,37 +760,14 @@
             }
         }
 
-        function moveSnake(s, isInvincible) {
-            s.x += Math.cos(s.angle) * s.speed; s.y += Math.sin(s.angle) * s.speed;
-            let hitWall = false;
-            if (s.x < s.radius || s.x > WORLD_SIZE - s.radius || s.y < s.radius || s.y > WORLD_SIZE - s.radius) { 
-                hitWall = true; if (isInvincible && !s.isPlayer && !s.isRemotePlayer) s.angle += Math.PI; 
-            }
-            s.x = Math.max(s.radius, Math.min(WORLD_SIZE - s.radius, s.x));
-            s.y = Math.max(s.radius, Math.min(WORLD_SIZE - s.radius, s.y));
-            s.history.unshift({ x: s.x, y: s.y });
-            if (s.history.length > Math.floor(s.tailLength) * 4 + 10) s.history.pop();
-            return hitWall && !isInvincible; 
-        }
-
-        function eatFood(s, f, index) {
-            foods.splice(index, 1);
-            let growthRate = 0.15; let sizeIncrease = 0.05; let scoreAdd = 10;
-            if (f.isBig) {
-                if (f.customRadius && f.customRadius > 10) { growthRate = f.customRadius*0.045; sizeIncrease = f.customRadius*0.02; scoreAdd = Math.floor(f.customRadius*5); } 
-                else { growthRate = 0.6; sizeIncrease = 0.2; scoreAdd = 50; }
-            }
-            s.tailLength += growthRate; s.radius += sizeIncrease; if (s.radius > 60) s.radius = 60;
-            s.score += scoreAdd;
-            if (s.isPlayer) scoreElement.innerText = Math.floor(s.score);
-            if (foods.length < FOOD_COUNT) spawnFood(); 
-        }
-
         // ==============================================================
-        // 2.082 렌더링 엔진: 캔버스 오류 방어벽 적용
+        // 2.083 렌더링 엔진: 캔버스 시점 강제 롤백 적용
         // ==============================================================
         function draw() {
             try {
+                // 이전 프레임에서 오류가 났더라도 카메라 시점을 세계의 중심으로 강제 리셋! (검은화면 완벽방어)
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                
                 if (canvas.width === 0 || isNaN(canvas.width)) resizeCanvas();
                 
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
