@@ -76,7 +76,7 @@
 
     <div id="start-screen">
         <h1>🐍 Snake Item Arena</h1>
-        <div class="version-text">ver 2.089 (P2P Connection Fix)</div>
+        <div class="version-text">ver 2.090 (Client Rendering Fix)</div>
         
         <div class="menu-group">
             <label>Game Mode</label>
@@ -287,22 +287,16 @@
             });
         });
 
-        // ==============================================================
-        // 2.088 핵심 수정부: 방장과 접속자의 ID 충돌 방지 로직
-        // ==============================================================
         function initPeer(pin, isHost) {
-            const hostPeerId = 'snake201-' + pin; // 방장의 고정 ID
+            const hostPeerId = 'snake201-' + pin; 
 
             if (isHost) {
-                // 1. 방장(Host)은 지정된 핀 번호로 ID를 생성하여 방을 엽니다.
                 peer = new Peer(hostPeerId, { host: 'game-snakearena.onrender.com', port: 443, secure: true, path: '/' });
                 peer.on('connection', conn => { p2pConnection = conn; setupHostConnection(); });
                 peer.on('error', err => { console.error('Host Error:', err); });
             } else {
-                // 2. 접속자(Client)는 ID 없이(랜덤 자동부여) 서버에 접속합니다! (충돌 방지)
                 peer = new Peer({ host: 'game-snakearena.onrender.com', port: 443, secure: true, path: '/' });
                 peer.on('open', () => { 
-                    // 3. 서버에 잘 들어갔다면, 방장의 ID(hostPeerId)를 찾아 연결을 요청합니다.
                     p2pConnection = peer.connect(hostPeerId); 
                     setupClientConnection(); 
                 });
@@ -376,6 +370,9 @@
                             enemies = data.enemies;
                             if (data.hostSnake && !data.hostSnake.isDead) enemies.push(data.hostSnake);
                         }
+                        // 2.090: 클라이언트도 네트워크 데이터를 통해 allSnakes를 구축하여 리더보드를 업데이트합니다.
+                        allSnakes = [...enemies];
+                        if (snake && !snake.isDead) allSnakes.push(snake);
                         updateLeaderboard();
                     } else if (data.type === 'sound') { playSound(data.soundType); }
                 });
@@ -828,6 +825,9 @@
             }
         }
 
+        // ==============================================================
+        // 2.090 핵심 수정: 클라이언트의 화면 렌더링을 위해 allSnakes를 여기서 직접 생성!
+        // ==============================================================
         function draw() {
             try {
                 ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -954,9 +954,12 @@
                     }
                 };
 
-                if (allSnakes) {
-                    allSnakes.forEach(drawSnake);
-                }
+                // 접속자(Client)의 경우 update()가 실행되지 않으므로, 
+                // 화면을 그리기 직전 여기서 직접 네트워크 데이터(enemies, snake)를 모아 명단을 조립합니다.
+                let snakesToDraw = [...enemies];
+                if (snake && !snake.isDead) snakesToDraw.push(snake);
+                
+                snakesToDraw.forEach(drawSnake);
 
             } catch(e) {
                 console.error("Render block error: ", e);
