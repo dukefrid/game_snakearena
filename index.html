@@ -76,7 +76,7 @@
 
     <div id="start-screen">
         <h1>🐍 Snake Item Arena</h1>
-        <div class="version-text">ver 2.083 (Active Spawner & Anti-Blackscreen)</div>
+        <div class="version-text">ver 2.084 (Black Screen & Core Fix)</div>
         
         <div class="menu-group">
             <label>Game Mode</label>
@@ -181,7 +181,6 @@
         let lastPlayerDeathX = WORLD_SIZE / 2;
         let lastPlayerDeathY = WORLD_SIZE / 2;
 
-        // 2.083 스포너 시스템 변수
         let targetEnemyCount = 10;
         let enemySpawnTimer = 0;
 
@@ -366,7 +365,9 @@
 
         let snake;
         let foods = []; let enemies = []; let items = []; let particles = []; let bullets = []; 
+        let allSnakes = []; // 2.084: 명단을 매번 재조립하기 위한 전역 변수
         let itemSpawnInterval;
+        let gameLoopId = null;
 
         startBtn.addEventListener('click', () => startGame('arena'));
 
@@ -378,12 +379,13 @@
             const nickname = document.getElementById('nickname').value || 'Player';
             const skinColor = document.getElementById('skin-color').value;
             
-            // 스포너 설정
             targetEnemyCount = (gameMode === 'host') ? 15 : 10; 
             enemySpawnTimer = 0;
 
-            foods = []; enemies = []; items = []; particles = []; bullets = [];
+            foods = []; enemies = []; items = []; particles = []; bullets = []; allSnakes = [];
             isPaused = false; pauseBtn.innerText = "⏸ Pause"; clearInterval(itemSpawnInterval);
+            
+            if (gameLoopId) cancelAnimationFrame(gameLoopId); // 이전 모터가 돌고 있다면 멈춤
 
             snake = createSnake(WORLD_SIZE / 2, WORLD_SIZE / 2, skinColor, nickname, true);
             snake.buffs.invincible = Date.now() + 3000;
@@ -401,6 +403,11 @@
 
             startScreen.style.display = 'none'; uiLayer.style.display = 'flex'; controlsLayer.style.display = 'flex'; 
             isPlaying = true; scoreElement.innerText = "0"; resizeCanvas();
+
+            // 2.084 핵심 픽스: hostGameLoop라는 오타를 버리고 gameLoop로 정상 호출!
+            if (gameMode !== 'client') {
+                gameLoopId = requestAnimationFrame(gameLoop);
+            }
         }
 
         continueBtn.addEventListener('click', () => {
@@ -460,6 +467,7 @@
         }
 
         function checkBodyCollision(x, y, radius, bodySnake, now) {
+            if(!bodySnake || bodySnake.isDead) return false;
             let hitRadius = bodySnake.radius * 0.8;
             if (now && now < bodySnake.buffs.spike) hitRadius = bodySnake.radius * 4; 
             for (let i = 0; i < Math.floor(bodySnake.tailLength); i++) {
@@ -472,45 +480,27 @@
             return false;
         }
 
-        function isPositionDangerous(x, y, radius, excludeEnemyIndex, now) {
+        function isPositionDangerous(x, y, radius, excludeEnemy, now) {
             if (x < radius || x > WORLD_SIZE - radius || y < radius || y > WORLD_SIZE - radius) return true;
-            if (!snake.isDead && checkBodyCollision(x, y, radius, snake, now)) return true;
-            if (!snake.isDead && now < snake.buffs.spike && Math.hypot(x - snake.x, y - snake.y) < radius + snake.radius * 4) return true;
-            for (let j = 0; j < enemies.length; j++) {
-                if (excludeEnemyIndex !== j && !enemies[j].isDead) {
-                    if (checkBodyCollision(x, y, radius, enemies[j], now)) return true;
-                    if (now < enemies[j].buffs.spike && Math.hypot(x - enemies[j].x, y - enemies[j].y) < radius + enemies[j].radius * 4) return true;
+            for (let tgt of allSnakes) {
+                if (tgt !== excludeEnemy && !tgt.isDead) {
+                    if (checkBodyCollision(x, y, radius, tgt, now)) return true;
+                    if (now < tgt.buffs.spike && Math.hypot(x - tgt.x, y - tgt.y) < radius + tgt.radius * 4) return true;
                 }
-            }
-            return false;
-        }
-
-        function checkEnemyCollisions(s, currentIndex, now) {
-            for (let j = 0; j < enemies.length; j++) {
-                if (currentIndex !== j && !enemies[j].isDead) {
-                    if (checkBodyCollision(s.x, s.y, s.radius, enemies[j], now)) return true;
-                    if (now < enemies[j].buffs.spike && Math.hypot(s.x - enemies[j].x, s.y - enemies[j].y) < s.radius + enemies[j].radius * 4) return true;
-                }
-            }
-            if (currentIndex !== -1 && !snake.isDead) {
-                if (checkBodyCollision(s.x, s.y, s.radius, snake, now)) return true;
-                if (now < snake.buffs.spike && Math.hypot(s.x - snake.x, s.y - snake.y) < s.radius + snake.radius * 4) return true;
             }
             return false;
         }
 
         function updateLeaderboard() {
-            const allSnakes = [...enemies];
-            if (snake && !snake.isDead) allSnakes.push(snake);
-
-            allSnakes.sort((a, b) => b.score - a.score);
+            if(!allSnakes) return;
+            let sorted = [...allSnakes].sort((a, b) => b.score - a.score);
             const isMobileEnv = window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
             const maxDisp = isMobileEnv ? 4 : 10;
             
             let html = '';
             const myName = document.getElementById('nickname').value || 'Player';
-            for (let i = 0; i < Math.min(maxDisp, allSnakes.length); i++) {
-                const s = allSnakes[i];
+            for (let i = 0; i < Math.min(maxDisp, sorted.length); i++) {
+                const s = sorted[i];
                 let rankClass = '';
                 if (s.name === myName) rankClass = 'class="my-rank"';
                 else if (s.isPlayer || s.isRemotePlayer) rankClass = 'class="remote-rank"';
@@ -519,11 +509,8 @@
             leaderboardList.innerHTML = html;
         }
 
-        // ==============================================================
-        // 2.083 핵심 수정: 꼬임 방지를 위해 즉시 삭제 및 setTimeout 전면 폐지
-        // ==============================================================
         function die(deadSnake) {
-            if (deadSnake.isDead) return;
+            if (!deadSnake || deadSnake.isDead) return;
             deadSnake.isDead = true; 
 
             if (deadSnake.isPlayer) {
@@ -550,11 +537,45 @@
             }
         }
 
+        function moveSnake(s, isInvincible) {
+            s.x += Math.cos(s.angle) * s.speed; s.y += Math.sin(s.angle) * s.speed;
+            let hitWall = false;
+            if (s.x < s.radius || s.x > WORLD_SIZE - s.radius || s.y < s.radius || s.y > WORLD_SIZE - s.radius) { 
+                hitWall = true; if (isInvincible && !s.isPlayer && !s.isRemotePlayer) s.angle += Math.PI; 
+            }
+            s.x = Math.max(s.radius, Math.min(WORLD_SIZE - s.radius, s.x));
+            s.y = Math.max(s.radius, Math.min(WORLD_SIZE - s.radius, s.y));
+            s.history.unshift({ x: s.x, y: s.y });
+            if (s.history.length > Math.floor(s.tailLength) * 4 + 10) s.history.pop();
+            return hitWall && !isInvincible; 
+        }
+
+        function eatFood(s, f, index) {
+            foods.splice(index, 1);
+            let growthRate = 0.15; let sizeIncrease = 0.05; let scoreAdd = 10;
+            if (f.isBig) {
+                if (f.customRadius && f.customRadius > 10) { growthRate = f.customRadius*0.045; sizeIncrease = f.customRadius*0.02; scoreAdd = Math.floor(f.customRadius*5); } 
+                else { growthRate = 0.6; sizeIncrease = 0.2; scoreAdd = 50; }
+            }
+            s.tailLength += growthRate; s.radius += sizeIncrease; if (s.radius > 60) s.radius = 60;
+            s.score += scoreAdd;
+            if (s.isPlayer) scoreElement.innerText = Math.floor(s.score);
+            if (foods.length < FOOD_COUNT) spawnFood(); 
+        }
+
+        // ==============================================================
+        // 2.084 핵심 로직: 매 프레임 초반에 allSnakes를 무조건 재조립합니다.
+        // ==============================================================
         function update() {
             if (!isPlaying || isPaused || gameMode === 'client') return; 
 
             const now = Date.now();
+            
+            // 모든 뱀 명단을 한 곳으로 모아 안전하게 관리
+            allSnakes = [...enemies];
+            if (snake && !snake.isDead) allSnakes.push(snake);
 
+            // --- 플레이어 업데이트 ---
             if (!snake.isDead) {
                 let buffText = "";
                 if (now < snake.buffs.magnet) buffText += `<div class="buff-text buff-magnet">🧲 Magnet: ${Math.ceil((snake.buffs.magnet - now)/1000)}s</div>`;
@@ -572,18 +593,23 @@
                 let playerHitWall = moveSnake(snake, isInv);
 
                 if (isInv) {
-                    for (let i = enemies.length - 1; i >= 0; i--) {
-                        let e = enemies[i];
-                        if (!e.isDead && !(now < e.buffs.invincible)) {
-                            if (checkBodyCollision(snake.x, snake.y, snake.radius, e, now) || Math.hypot(snake.x - e.x, snake.y - e.y) < snake.radius + e.radius) {
-                                die(e);
+                    for (let tgt of allSnakes) {
+                        if (tgt !== snake && !tgt.isDead && !(now < tgt.buffs.invincible)) {
+                            if (checkBodyCollision(snake.x, snake.y, snake.radius, tgt, now) || Math.hypot(snake.x - tgt.x, snake.y - tgt.y) < snake.radius + tgt.radius) {
+                                die(tgt);
                             }
                         }
                     }
                 } else {
-                    if (playerHitWall || checkEnemyCollisions(snake, -1, now)) {
-                        die(snake); 
+                    let collided = false;
+                    for (let tgt of allSnakes) {
+                        if (tgt !== snake && !tgt.isDead) {
+                            if (checkBodyCollision(snake.x, snake.y, snake.radius, tgt, now) || (now < tgt.buffs.spike && Math.hypot(snake.x - tgt.x, snake.y - tgt.y) < snake.radius + tgt.radius * 4)) {
+                                collided = true; break;
+                            }
+                        }
                     }
+                    if (playerHitWall || collided) die(snake); 
                 }
 
                 if (!snake.isDead && now < snake.buffs.gun && now - snake.lastShootTime > 300) {
@@ -592,6 +618,7 @@
                 }
             }
 
+            // --- 적 뱀 업데이트 ---
             for (let i = enemies.length - 1; i >= 0; i--) {
                 let enemy = enemies[i];
                 if (enemy.isDead) continue;
@@ -608,7 +635,7 @@
                         let lookAhead = enemy.radius * 5; 
                         let fX = enemy.x + Math.cos(enemy.angle) * lookAhead; let fY = enemy.y + Math.sin(enemy.angle) * lookAhead;
 
-                        if (isPositionDangerous(fX, fY, enemy.radius, i, now)) {
+                        if (isPositionDangerous(fX, fY, enemy.radius, enemy, now)) {
                             if (!enemy.turnDirection) enemy.turnDirection = Math.random() < 0.5 ? 1 : -1;
                             enemy.angle += enemy.turnDirection * 0.3; 
                         } else {
@@ -640,23 +667,23 @@
                 let enemyHitWall = moveSnake(enemy, isInv);
 
                 if (isInv) {
-                    if (!snake.isDead && !(now < snake.buffs.invincible)) {
-                        if (checkBodyCollision(enemy.x, enemy.y, enemy.radius, snake, now) || Math.hypot(enemy.x - snake.x, enemy.y - snake.y) < enemy.radius + snake.radius) {
-                            die(snake); 
-                        }
-                    }
-                    for (let j = enemies.length - 1; j >= 0; j--) {
-                        if (i === j) continue;
-                        let e2 = enemies[j];
-                        if (e2.isDead || now < e2.buffs.invincible) continue;
-                        if (checkBodyCollision(enemy.x, enemy.y, enemy.radius, e2, now) || Math.hypot(enemy.x - e2.x, enemy.y - e2.y) < enemy.radius + e2.radius) {
-                            die(e2); 
+                    for (let tgt of allSnakes) {
+                        if (tgt !== enemy && !tgt.isDead && !(now < tgt.buffs.invincible)) {
+                            if (checkBodyCollision(enemy.x, enemy.y, enemy.radius, tgt, now) || Math.hypot(enemy.x - tgt.x, enemy.y - tgt.y) < enemy.radius + tgt.radius) {
+                                die(tgt); 
+                            }
                         }
                     }
                 } else {
-                    if (enemyHitWall || (!snake.isDead && checkBodyCollision(enemy.x, enemy.y, enemy.radius, snake, now)) || checkEnemyCollisions(enemy, i, now)) {
-                        die(enemy);
+                    let collided = false;
+                    for (let tgt of allSnakes) {
+                        if (tgt !== enemy && !tgt.isDead) {
+                            if (checkBodyCollision(enemy.x, enemy.y, enemy.radius, tgt, now) || (now < tgt.buffs.spike && Math.hypot(enemy.x - tgt.x, enemy.y - tgt.y) < enemy.radius + tgt.radius * 4)) {
+                                collided = true; break;
+                            }
+                        }
                     }
+                    if (enemyHitWall || collided) die(enemy);
                 }
 
                 if (!enemy.isDead && now < enemy.buffs.gun && now - enemy.lastShootTime > 300) {
@@ -666,15 +693,13 @@
                 }
             }
 
-            let allActiveSnakes = [...enemies];
-            if (!snake.isDead) allActiveSnakes.push(snake);
-
-            for (let i = 0; i < allActiveSnakes.length; i++) {
-                let s1 = allActiveSnakes[i];
+            // --- 가시 무적 처형 판정 ---
+            for (let i = 0; i < allSnakes.length; i++) {
+                let s1 = allSnakes[i];
                 if (s1.isDead) continue;
                 if (now < s1.buffs.spike) {
-                    for (let j = 0; j < allActiveSnakes.length; j++) {
-                        if (i === j) continue; let s2 = allActiveSnakes[j];
+                    for (let j = 0; j < allSnakes.length; j++) {
+                        if (i === j) continue; let s2 = allSnakes[j];
                         if (s2.isDead || now < s2.buffs.invincible) continue; 
                         
                         if (checkBodyCollision(s2.x, s2.y, s2.radius, s1, now) || Math.hypot(s2.x - s1.x, s2.y - s1.y) < s2.radius + s1.radius * 4) {
@@ -684,13 +709,14 @@
                 }
             }
 
+            // --- 총알 판정 ---
             for (let i = bullets.length - 1; i >= 0; i--) {
                 let b = bullets[i]; b.x += b.vx; b.y += b.vy;
                 if (isNaN(b.x) || isNaN(b.y) || b.x < 0 || b.x > WORLD_SIZE || b.y < 0 || b.y > WORLD_SIZE) { bullets.splice(i, 1); continue; }
 
                 let hit = false;
-                for (let j = 0; j < allActiveSnakes.length; j++) {
-                    let tgt = allActiveSnakes[j];
+                for (let j = 0; j < allSnakes.length; j++) {
+                    let tgt = allSnakes[j];
                     if (tgt.isDead || b.owner === tgt) continue;
                     if (Math.hypot(b.x - tgt.x, b.y - tgt.y) < b.radius + tgt.radius || checkBodyCollision(b.x, b.y, b.radius, tgt, now)) {
                         if (!(now < tgt.buffs.invincible)) die(tgt);
@@ -700,9 +726,10 @@
                 if (hit) bullets.splice(i, 1);
             }
 
+            // --- 아이템 & 먹이 ---
             for (let i = items.length - 1; i >= 0; i--) {
                 let pickedUp = false;
-                for (let s of allActiveSnakes) {
+                for (let s of allSnakes) {
                     if (!s.isDead && Math.hypot(s.x - items[i].x, s.y - items[i].y) < s.radius + items[i].radius) {
                         s.buffs[items[i].type] = now + 10000; pickedUp = true;
                         if (s.isPlayer || s.isRemotePlayer) broadcastSound('item'); break;
@@ -713,13 +740,13 @@
 
             for (let i = foods.length - 1; i >= 0; i--) {
                 let f = foods[i];
-                for (let s of allActiveSnakes) {
+                for (let s of allSnakes) {
                     if (!s.isDead && now < s.buffs.magnet && Math.hypot(s.x - f.x, s.y - f.y) < 250) {
                         let a = Math.atan2(s.y - f.y, s.x - f.x) || 0; f.x += Math.cos(a) * 8; f.y += Math.sin(a) * 8;
                     }
                 }
                 let eaten = false;
-                for (let s of allActiveSnakes) {
+                for (let s of allSnakes) {
                     if (!s.isDead && Math.hypot(s.x - f.x, s.y - f.y) < s.radius + f.radius) {
                         eatFood(s, f, i); eaten = true; break;
                     }
@@ -733,15 +760,16 @@
                 if (p.life <= 0 || p.radius < 0.5) particles.splice(i, 1);
             }
 
-            // 모든 연산이 끝나고 배열을 안전하게 정리
+            // 배열 일괄 정리
             enemies = enemies.filter(e => !e.isDead);
+            allSnakes = allSnakes.filter(s => !s.isDead);
             
-            // 2.083 핵심: 적 부활을 담당하는 무적의 자동 스포너!
+            // 봇 스폰 시스템
             if (gameMode !== 'client') {
                 let botCount = enemies.filter(e => !e.isRemotePlayer).length;
                 if (botCount < targetEnemyCount) {
                     enemySpawnTimer++;
-                    if (enemySpawnTimer > 60) { // 약 1초 대기 후 즉시 생성
+                    if (enemySpawnTimer > 60) { 
                         const diff = document.getElementById('difficulty').value;
                         spawnEnemy(diff === 'hard' ? 4.8 : (diff === 'easy' ? 3.5 : 4));
                         enemySpawnTimer = 0;
@@ -761,16 +789,15 @@
         }
 
         // ==============================================================
-        // 2.083 렌더링 엔진: 캔버스 시점 강제 롤백 적용
+        // 렌더링 엔진: 캔버스 오류 철통 방어
         // ==============================================================
         function draw() {
             try {
-                // 이전 프레임에서 오류가 났더라도 카메라 시점을 세계의 중심으로 강제 리셋! (검은화면 완벽방어)
+                // 이전 프레임 오류가 났더라도 카메라 시점을 강제 복구
                 ctx.setTransform(1, 0, 0, 1, 0, 0);
-                
-                if (canvas.width === 0 || isNaN(canvas.width)) resizeCanvas();
-                
+                if (!canvas.width || !canvas.height) resizeCanvas();
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
                 if (!isPlaying) return;
 
                 const time = Date.now();
@@ -884,8 +911,9 @@
                     }
                 };
 
-                enemies.forEach(drawSnake);
-                if (snake && !snake.isDead) drawSnake(snake);
+                if (allSnakes) {
+                    allSnakes.forEach(drawSnake);
+                }
 
             } catch(e) {
                 console.error("Render block error: ", e);
@@ -899,12 +927,20 @@
             }
         }
 
+        // ==============================================================
+        // 2.084: hostGameLoop 오타를 버리고 gameLoop로 정상 호출
+        // ==============================================================
         function gameLoop() {
-            try { update(); draw(); } catch(e) {}
-            requestAnimationFrame(gameLoop);
+            try { 
+                update(); 
+                draw(); 
+            } catch(e) {
+                console.error("Loop Error:", e);
+            }
+            if (isPlaying && gameMode !== 'client') {
+                gameLoopId = requestAnimationFrame(gameLoop);
+            }
         }
-
-        requestAnimationFrame(gameLoop);
     });
 </script>
 </body>
