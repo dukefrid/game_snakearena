@@ -76,7 +76,7 @@
 
     <div id="start-screen">
         <h1>🐍 Snake Item Arena</h1>
-        <div class="version-text">ver 2.03 (Arena Fix)</div>
+        <div class="version-text">ver 2.04</div>
         
         <div class="menu-group">
             <label>Game Mode</label>
@@ -172,13 +172,14 @@
         let items = [];
         let particles = []; 
         let bullets = []; 
+        let allSnakes = []; // 호스트 연산용 전역 배열
         let itemSpawnInterval;
 
         // --- P2P 통신 변수 ---
         let peer = null;
         let p2pConnection = null;
 
-        /* 오디오 시스템 (Web Audio API + HTMLAudioElement) */
+        /* 오디오 시스템 (에러가 나도 게임은 멈추지 않도록 예외처리 강화) */
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         let audioCtx;
         const explosionSound = new Audio('explosion.mp3');
@@ -187,29 +188,37 @@
         bgmSound.loop = true; bgmSound.volume = 0.3;
 
         function initAudio() {
-            if (!audioCtx) audioCtx = new AudioContext();
-            if (audioCtx.state === 'suspended') audioCtx.resume();
+            try {
+                if (!audioCtx && (window.AudioContext || window.webkitAudioContext)) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioCtx && audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+            } catch(e) { console.warn("Audio Context init failed:", e); }
         }
 
         function playSound(type) {
-            if (type === 'enemy_death') { let snd = explosionSound.cloneNode(); snd.play().catch(()=>{}); return; }
-            if (type === 'player_death') { let snd = myExplosionSound.cloneNode(); snd.play().catch(()=>{}); return; }
-            
-            if (!audioCtx) return;
-            const gainNode = audioCtx.createGain(); gainNode.connect(audioCtx.destination);
-            const now = audioCtx.currentTime;
+            try {
+                if (type === 'enemy_death') { let snd = explosionSound.cloneNode(); snd.play().catch(()=>{}); return; }
+                if (type === 'player_death') { let snd = myExplosionSound.cloneNode(); snd.play().catch(()=>{}); return; }
+                
+                if (!audioCtx) return;
+                const gainNode = audioCtx.createGain(); gainNode.connect(audioCtx.destination);
+                const now = audioCtx.currentTime;
 
-            if (type === 'item') {
-                const osc = audioCtx.createOscillator(); osc.connect(gainNode); osc.type = 'sine';
-                osc.frequency.setValueAtTime(400, now); osc.frequency.exponentialRampToValueAtTime(1200, now + 0.2);
-                gainNode.gain.setValueAtTime(0.1, now); gainNode.gain.linearRampToValueAtTime(0, now + 0.3);
-                osc.start(now); osc.stop(now + 0.3);
-            } else if (type === 'shoot') {
-                const osc = audioCtx.createOscillator(); osc.connect(gainNode); osc.type = 'square';
-                osc.frequency.setValueAtTime(880, now); osc.frequency.exponentialRampToValueAtTime(110, now + 0.1);
-                gainNode.gain.setValueAtTime(0.05, now); gainNode.gain.linearRampToValueAtTime(0, now + 0.1);
-                osc.start(now); osc.stop(now + 0.1);
-            }
+                if (type === 'item') {
+                    const osc = audioCtx.createOscillator(); osc.connect(gainNode); osc.type = 'sine';
+                    osc.frequency.setValueAtTime(400, now); osc.frequency.exponentialRampToValueAtTime(1200, now + 0.2);
+                    gainNode.gain.setValueAtTime(0.1, now); gainNode.gain.linearRampToValueAtTime(0, now + 0.3);
+                    osc.start(now); osc.stop(now + 0.3);
+                } else if (type === 'shoot') {
+                    const osc = audioCtx.createOscillator(); osc.connect(gainNode); osc.type = 'square';
+                    osc.frequency.setValueAtTime(880, now); osc.frequency.exponentialRampToValueAtTime(110, now + 0.1);
+                    gainNode.gain.setValueAtTime(0.05, now); gainNode.gain.linearRampToValueAtTime(0, now + 0.1);
+                    osc.start(now); osc.stop(now + 0.1);
+                }
+            } catch(e) { console.warn("Sound play failed:", e); }
         }
 
         // --- 이벤트 리스너 ---
@@ -227,7 +236,7 @@
         });
 
         document.getElementById('pause-btn').addEventListener('click', () => {
-            if (!isPlaying || snake.isDead || gameMode === 'client') return; // 접속자는 일시정지 불가
+            if (!isPlaying || snake.isDead || gameMode === 'client') return; 
             isPaused = !isPaused;
             document.getElementById('pause-btn').innerText = isPaused ? "▶ Resume" : "⏸ Pause";
             if (isPaused) bgmSound.pause(); else bgmSound.play().catch(()=>{});
@@ -251,17 +260,13 @@
         function initPeer(pin, isHost) {
             const peerId = 'snake201-' + pin;
             
-            /* Render 전용 서버 적용을 원하시면 아래 주석을 풀고 사용하세요 */
-            /*
+            // 나으리께서 만드신 Render 서버 연결!
             peer = new Peer(peerId, {
-                host: 'game-snakearena.onrender.com',
+                host: 'game-snakearena.onrender.com', 
                 port: 443,
                 secure: true,
                 path: '/'
             });
-            */
-            // 일단은 공용 서버 기본값 (오류 시 바로 테스트 가능하도록 유지)
-            peer = new Peer(peerId);
 
             if (isHost) {
                 peer.on('open', id => { console.log('Host created:', id); });
@@ -302,7 +307,6 @@
             if(pin.length === 4) initPeer(pin, false);
         });
 
-        // --- 호스트 연결 완료 시 ---
         function setupHostConnection() {
             p2pConnection.on('open', () => {
                 p2pConnection.on('data', data => {
@@ -313,13 +317,12 @@
                     } else if (data.type === 'continue' && remoteSnake) {
                         remoteSnake = createSnake(WORLD_SIZE/2 + 200, WORLD_SIZE/2, remoteSnake.color, remoteSnake.name, true);
                         remoteSnake.buffs.invincible = Date.now() + 3000;
-                        allSnakes.push(remoteSnake); // 재투입
+                        allSnakes.push(remoteSnake); 
                     }
                 });
             });
         }
 
-        // --- 클라이언트 연결 완료 시 ---
         function setupClientConnection() {
             p2pConnection.on('open', () => {
                 gameMode = 'client';
@@ -331,14 +334,9 @@
                 
                 p2pConnection.on('data', data => {
                     if (data.type === 'state') {
-                        foods = data.foods;
-                        items = data.items;
-                        bullets = data.bullets;
-                        particles = data.particles;
-                        
+                        foods = data.foods; items = data.items; bullets = data.bullets; particles = data.particles;
                         allSnakes = data.snakes;
                         snake = allSnakes.find(s => s.name === nickname);
-                        
                         updateLeaderboard(allSnakes);
                         renderClient();
                     } else if (data.type === 'sound') {
@@ -356,8 +354,6 @@
 
         // --- 게임 시작 (싱글 & 호스트 공통) ---
         document.getElementById('start-btn').addEventListener('click', () => startGame('arena'));
-
-        let allSnakes = []; // 호스트 연산용 전역 배열
 
         function startGame(mode, remoteName = null, remoteColor = null) {
             initAudio(); 
@@ -400,12 +396,7 @@
             document.getElementById('controls-layer').style.display = 'flex'; 
             isPlaying = true;
             document.getElementById('score').innerText = "0";
-            
-            if(gameMode === 'arena') {
-                document.getElementById('continue-btn').style.display = 'block';
-            } else {
-                document.getElementById('continue-btn').style.display = 'block'; 
-            }
+            document.getElementById('continue-btn').style.display = 'block'; 
         }
 
         // --- 이어하기 & 종료 ---
@@ -486,16 +477,19 @@
             playSound(type);
             if (gameMode === 'host' && p2pConnection) p2pConnection.send({ type: 'sound', soundType: type });
         }
+        
+        // 2.04 핵심 버그 수정: 배열 강제 삭제(splice) 제거, isDead 태그만 부착
         function die(deadSnake) {
+            if (deadSnake.isDead) return; // 중복 실행 방지
+            deadSnake.isDead = true;
+
             if (deadSnake.isPlayer) {
                 broadcastSound('player_death');
                 if(deadSnake === snake) {
                     lastPlayerDeathX = Math.max(100, Math.min(WORLD_SIZE - 100, deadSnake.x));
                     lastPlayerDeathY = Math.max(100, Math.min(WORLD_SIZE - 100, deadSnake.y));
                     showGameOver(snake.score);
-                } else if (deadSnake === remoteSnake) {
-                    // 상대방 뱀 죽음 
-                }
+                } 
             } else {
                 broadcastSound('enemy_death');
             }
@@ -510,16 +504,12 @@
                 }
             }
             
-            deadSnake.isDead = true;
-            let idx = allSnakes.indexOf(deadSnake);
-            if(idx > -1) allSnakes.splice(idx, 1);
-            
             if (!deadSnake.isPlayer) {
-                let eIdx = enemies.indexOf(deadSnake);
-                if(eIdx > -1) enemies.splice(eIdx, 1);
                 setTimeout(() => {
-                    let bot = spawnEnemy(4);
-                    enemies.push(bot); allSnakes.push(bot);
+                    if(!isPaused && isPlaying) {
+                        let bot = spawnEnemy(4);
+                        enemies.push(bot); allSnakes.push(bot);
+                    }
                 }, 2000); 
             }
         }
@@ -675,7 +665,9 @@
                 if (p.life <= 0 || p.radius < 0.5) particles.splice(i, 1);
             }
 
-            /* 오류를 일으켰던 문제의 구간! 이제 allSnakes를 무사히 전달합니다. */
+            // 배열 정리: 죽은 뱀들을 연산 루프가 끝난 뒤 한 번에 정리하여 에러 방지
+            allSnakes = allSnakes.filter(s => !s.isDead);
+            enemies = enemies.filter(s => !s.isDead);
             updateLeaderboard(allSnakes);
 
             if (gameMode === 'host' && p2pConnection) {
@@ -712,9 +704,6 @@
                 buffStatusElement.innerHTML = buffText;
                 
                 if(gameMode === 'client') document.getElementById('score').innerText = Math.floor(snake.score);
-                
-            } else if (snake && snake.isDead && document.getElementById('game-over-screen').style.display !== 'flex') {
-                 showGameOver(snake.score);
             }
 
             if (!isPaused && isPlaying) currentZoom += (targetZoom - currentZoom) * 0.05;
