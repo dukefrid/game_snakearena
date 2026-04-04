@@ -76,7 +76,7 @@
 
     <div id="start-screen">
         <h1>🐍 Snake Item Arena</h1>
-        <div class="version-text">ver 2.084 (Black Screen & Core Fix)</div>
+        <div class="version-text">ver 2.085 (Background Sync & Near Respawn)</div>
         
         <div class="menu-group">
             <label>Game Mode</label>
@@ -178,8 +178,11 @@
         let mouse = { x: canvas.width / 2, y: canvas.height / 2, angle: 0 };
         let currentZoom = 1.0; 
 
+        // 부활 위치를 기억하는 변수
         let lastPlayerDeathX = WORLD_SIZE / 2;
         let lastPlayerDeathY = WORLD_SIZE / 2;
+        let lastRemoteDeathX = WORLD_SIZE / 2;
+        let lastRemoteDeathY = WORLD_SIZE / 2;
 
         let targetEnemyCount = 10;
         let enemySpawnTimer = 0;
@@ -322,7 +325,10 @@
                         let rSnake = enemies.find(e => e.isRemotePlayer);
                         if (rSnake && !rSnake.isDead) rSnake.angle = data.angle;
                     } else if (data.type === 'continue') {
-                        let rSnake = createSnake(WORLD_SIZE/2 + 200, WORLD_SIZE/2, remotePlayerColor, remotePlayerName);
+                        // 멀티플레이 접속자 역시 근처에서 스폰
+                        let spawnX = Math.max(100, Math.min(WORLD_SIZE - 100, lastRemoteDeathX + (Math.random() * 200 - 100)));
+                        let spawnY = Math.max(100, Math.min(WORLD_SIZE - 100, lastRemoteDeathY + (Math.random() * 200 - 100)));
+                        let rSnake = createSnake(spawnX, spawnY, remotePlayerColor, remotePlayerName);
                         rSnake.isRemotePlayer = true; rSnake.buffs.invincible = Date.now() + 3000;
                         enemies.push(rSnake);
                     }
@@ -365,7 +371,7 @@
 
         let snake;
         let foods = []; let enemies = []; let items = []; let particles = []; let bullets = []; 
-        let allSnakes = []; // 2.084: 명단을 매번 재조립하기 위한 전역 변수
+        let allSnakes = []; 
         let itemSpawnInterval;
         let gameLoopId = null;
 
@@ -373,7 +379,7 @@
 
         function startGame(mode) {
             initAudio(); 
-            try { bgmSound.currentTime = 0; let p = bgmSound.play(); if(p!==undefined) p.catch(()=>{}); } catch(e){}
+            try { bgmSound.volume = 0.3; bgmSound.currentTime = 0; let p = bgmSound.play(); if(p!==undefined) p.catch(()=>{}); } catch(e){}
 
             gameMode = mode;
             const nickname = document.getElementById('nickname').value || 'Player';
@@ -385,7 +391,7 @@
             foods = []; enemies = []; items = []; particles = []; bullets = []; allSnakes = [];
             isPaused = false; pauseBtn.innerText = "⏸ Pause"; clearInterval(itemSpawnInterval);
             
-            if (gameLoopId) cancelAnimationFrame(gameLoopId); // 이전 모터가 돌고 있다면 멈춤
+            if (gameLoopId) cancelAnimationFrame(gameLoopId); 
 
             snake = createSnake(WORLD_SIZE / 2, WORLD_SIZE / 2, skinColor, nickname, true);
             snake.buffs.invincible = Date.now() + 3000;
@@ -404,21 +410,27 @@
             startScreen.style.display = 'none'; uiLayer.style.display = 'flex'; controlsLayer.style.display = 'flex'; 
             isPlaying = true; scoreElement.innerText = "0"; resizeCanvas();
 
-            // 2.084 핵심 픽스: hostGameLoop라는 오타를 버리고 gameLoop로 정상 호출!
             if (gameMode !== 'client') {
                 gameLoopId = requestAnimationFrame(gameLoop);
             }
         }
 
         continueBtn.addEventListener('click', () => {
-            initAudio(); try { let p = bgmSound.play(); if(p!==undefined) p.catch(()=>{}); } catch(e){}
+            initAudio(); 
+            // 2.085 수정: 이어하기 시 BGM 볼륨을 원상 복구하여 게임 생태계에 재진입함을 알림
+            try { bgmSound.volume = 0.3; let p = bgmSound.play(); if(p!==undefined) p.catch(()=>{}); } catch(e){}
 
             if (gameMode === 'client') {
                 p2pConnection.send({ type: 'continue' });
             } else {
                 const nickname = document.getElementById('nickname').value || 'Player';
                 const skinColor = document.getElementById('skin-color').value;
-                snake = createSnake(lastPlayerDeathX, lastPlayerDeathY, skinColor, nickname, true);
+                
+                // 2.085 수정: 정확한 죽은 위치가 아닌 반경 100픽셀 내의 '근처'에 안전하게 스폰
+                let spawnX = Math.max(100, Math.min(WORLD_SIZE - 100, lastPlayerDeathX + (Math.random() * 200 - 100)));
+                let spawnY = Math.max(100, Math.min(WORLD_SIZE - 100, lastPlayerDeathY + (Math.random() * 200 - 100)));
+
+                snake = createSnake(spawnX, spawnY, skinColor, nickname, true);
                 snake.buffs.invincible = Date.now() + 3000;
             }
 
@@ -429,7 +441,9 @@
         quitBtn.addEventListener('click', () => { window.location.reload(); });
 
         function showGameOver(score) {
-            bgmSound.pause(); finalScoreElement.innerText = Math.floor(score || 0);
+            // 2.085 수정: BGM을 멈추지 않고 볼륨을 10%로 낮춰서 배경 게임이 진행 중임을 확실히 체감되도록 수정
+            bgmSound.volume = 0.1; 
+            finalScoreElement.innerText = Math.floor(score || 0);
             uiLayer.style.display = 'none'; controlsLayer.style.display = 'none'; gameOverScreen.style.display = 'flex';
         }
 
@@ -519,8 +533,13 @@
                 lastPlayerDeathY = Math.max(100, Math.min(WORLD_SIZE - 100, deadSnake.y || WORLD_SIZE/2));
                 setTimeout(() => showGameOver(deadSnake.score), 2000); 
             } else {
-                if(deadSnake.isRemotePlayer) broadcastSound('player_death');
-                else broadcastSound('enemy_death');
+                if(deadSnake.isRemotePlayer) {
+                    broadcastSound('player_death');
+                    lastRemoteDeathX = Math.max(100, Math.min(WORLD_SIZE - 100, deadSnake.x || WORLD_SIZE/2));
+                    lastRemoteDeathY = Math.max(100, Math.min(WORLD_SIZE - 100, deadSnake.y || WORLD_SIZE/2));
+                } else {
+                    broadcastSound('enemy_death');
+                }
             }
              
             createExplosion(deadSnake.x, deadSnake.y, deadSnake.color, 40);
@@ -563,15 +582,11 @@
             if (foods.length < FOOD_COUNT) spawnFood(); 
         }
 
-        // ==============================================================
-        // 2.084 핵심 로직: 매 프레임 초반에 allSnakes를 무조건 재조립합니다.
-        // ==============================================================
         function update() {
             if (!isPlaying || isPaused || gameMode === 'client') return; 
 
             const now = Date.now();
             
-            // 모든 뱀 명단을 한 곳으로 모아 안전하게 관리
             allSnakes = [...enemies];
             if (snake && !snake.isDead) allSnakes.push(snake);
 
@@ -789,11 +804,10 @@
         }
 
         // ==============================================================
-        // 렌더링 엔진: 캔버스 오류 철통 방어
+        // 렌더링 엔진
         // ==============================================================
         function draw() {
             try {
-                // 이전 프레임 오류가 났더라도 카메라 시점을 강제 복구
                 ctx.setTransform(1, 0, 0, 1, 0, 0);
                 if (!canvas.width || !canvas.height) resizeCanvas();
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -927,9 +941,6 @@
             }
         }
 
-        // ==============================================================
-        // 2.084: hostGameLoop 오타를 버리고 gameLoop로 정상 호출
-        // ==============================================================
         function gameLoop() {
             try { 
                 update(); 
@@ -943,5 +954,3 @@
         }
     });
 </script>
-</body>
-</html>
