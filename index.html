@@ -34,7 +34,6 @@
         .my-rank { color: #ff6b6b; font-weight: bold; text-shadow: 0 0 5px #ff6b6b; }
         .remote-rank { color: #3498db; font-weight: bold; text-shadow: 0 0 5px #3498db; }
 
-        /* 시작 화면 UI */
         #start-screen {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background-color: rgba(26, 26, 46, 0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; color: white;
@@ -76,7 +75,7 @@
 
     <div id="start-screen">
         <h1>🐍 Snake Item Arena</h1>
-        <div class="version-text">ver 2.04</div>
+        <div class="version-text">ver 2.05 (Stable & Safe)</div>
         
         <div class="menu-group">
             <label>Game Mode</label>
@@ -104,9 +103,7 @@
                 <div id="room-pin" class="pin-display">----</div>
                 <p style="font-size: 14px; color: #aaa;">접속 대기 중...</p>
             </div>
-
             <hr style="border-color: #555; margin: 20px 0;">
-
             <button id="btn-join-room" class="menu-btn btn-blue">입장하기 (Join)</button>
             <div id="join-wait" style="display: none; margin-top: 15px;">
                 <input type="text" id="join-input" maxlength="4" placeholder="CODE">
@@ -144,7 +141,6 @@
 
 <script>
     window.addEventListener('DOMContentLoaded', () => {
-        // --- 랜덤 닉네임 생성 ---
         const randomId = Math.floor(1000 + Math.random() * 9000);
         document.getElementById('nickname').value = 'Player_' + randomId;
 
@@ -157,7 +153,7 @@
         const ENEMY_COUNT = 10;
         const BOT_NAMES = ['Alpha', 'Beta', 'Gamma', 'Viper', 'Cobra', 'Python', 'Kraken'];
 
-        let gameMode = 'arena'; // 'arena', 'host', 'client'
+        let gameMode = 'arena'; 
         let isPlaying = false;
         let isPaused = false; 
         let mouse = { x: canvas.width / 2, y: canvas.height / 2, angle: 0 };
@@ -165,21 +161,20 @@
         let lastPlayerDeathX = WORLD_SIZE / 2;
         let lastPlayerDeathY = WORLD_SIZE / 2;
 
-        let snake;         // 내 뱀
-        let remoteSnake;   // 상대방 뱀 (멀티 전용)
+        let snake;         
+        let remoteSnake;   
         let foods = [];
         let enemies = [];
         let items = [];
         let particles = []; 
         let bullets = []; 
-        let allSnakes = []; // 호스트 연산용 전역 배열
+        let allSnakes = []; 
         let itemSpawnInterval;
+        let gameLoopId = null; // 게임 루프 중복 실행 방지용
 
-        // --- P2P 통신 변수 ---
         let peer = null;
         let p2pConnection = null;
 
-        /* 오디오 시스템 (에러가 나도 게임은 멈추지 않도록 예외처리 강화) */
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         let audioCtx;
         const explosionSound = new Audio('explosion.mp3');
@@ -187,10 +182,20 @@
         const bgmSound = new Audio('snake_bgm.mp3');
         bgmSound.loop = true; bgmSound.volume = 0.3;
 
+        function safePlayBGM() {
+            try {
+                bgmSound.currentTime = 0;
+                let promise = bgmSound.play();
+                if (promise !== undefined) {
+                    promise.catch(e => console.warn("BGM Play Error:", e));
+                }
+            } catch(e) { console.warn("BGM handling error", e); }
+        }
+
         function initAudio() {
             try {
-                if (!audioCtx && (window.AudioContext || window.webkitAudioContext)) {
-                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (!audioCtx && AudioContext) {
+                    audioCtx = new AudioContext();
                 }
                 if (audioCtx && audioCtx.state === 'suspended') {
                     audioCtx.resume();
@@ -221,7 +226,6 @@
             } catch(e) { console.warn("Sound play failed:", e); }
         }
 
-        // --- 이벤트 리스너 ---
         window.addEventListener('mousemove', (e) => { 
             mouse.x = e.clientX; mouse.y = e.clientY; 
             mouse.angle = Math.atan2(mouse.y - canvas.height/2, mouse.x - canvas.width/2);
@@ -236,13 +240,12 @@
         });
 
         document.getElementById('pause-btn').addEventListener('click', () => {
-            if (!isPlaying || snake.isDead || gameMode === 'client') return; 
+            if (!isPlaying || (snake && snake.isDead) || gameMode === 'client') return; 
             isPaused = !isPaused;
             document.getElementById('pause-btn').innerText = isPaused ? "▶ Resume" : "⏸ Pause";
             if (isPaused) bgmSound.pause(); else bgmSound.play().catch(()=>{});
         });
 
-        // --- UI 전환 로직 ---
         const radios = document.querySelectorAll('input[name="mode"]');
         radios.forEach(radio => {
             radio.addEventListener('change', (e) => {
@@ -256,11 +259,10 @@
             });
         });
 
-        // --- 멀티플레이 통신 설정 ---
         function initPeer(pin, isHost) {
             const peerId = 'snake201-' + pin;
             
-            // 나으리께서 만드신 Render 서버 연결!
+            // 나으리의 전용 서버!
             peer = new Peer(peerId, {
                 host: 'game-snakearena.onrender.com', 
                 port: 443,
@@ -285,7 +287,6 @@
             }
         }
 
-        // 방장(Host) 버튼
         document.getElementById('btn-create-room').addEventListener('click', () => {
             const pin = Math.floor(1000 + Math.random() * 9000).toString();
             document.getElementById('room-pin').innerText = pin;
@@ -295,7 +296,6 @@
             initPeer(pin, true);
         });
 
-        // 접속(Join) 버튼
         document.getElementById('btn-join-room').addEventListener('click', () => {
             document.getElementById('btn-create-room').style.display = 'none';
             document.getElementById('btn-join-room').style.display = 'none';
@@ -352,12 +352,11 @@
             });
         }
 
-        // --- 게임 시작 (싱글 & 호스트 공통) ---
         document.getElementById('start-btn').addEventListener('click', () => startGame('arena'));
 
         function startGame(mode, remoteName = null, remoteColor = null) {
             initAudio(); 
-            bgmSound.currentTime = 0; bgmSound.play().catch(()=>{});
+            safePlayBGM();
 
             gameMode = mode;
             const nickname = document.getElementById('nickname').value || 'Player';
@@ -366,12 +365,15 @@
             foods = []; enemies = []; items = []; particles = []; bullets = []; allSnakes = [];
             isPaused = false; 
             clearInterval(itemSpawnInterval);
+            if (gameLoopId) cancelAnimationFrame(gameLoopId);
 
-            snake = createSnake(WORLD_SIZE / 2 - 100, WORLD_SIZE / 2, skinColor, nickname, true);
+            snake = createSnake(WORLD_SIZE / 2, WORLD_SIZE / 2, skinColor, nickname, true);
+            snake.buffs.invincible = Date.now() + 3000; // 스폰 즉사 방지 무적 3초
             allSnakes.push(snake);
 
             if (gameMode === 'host' && remoteName) {
                 remoteSnake = createSnake(WORLD_SIZE / 2 + 100, WORLD_SIZE / 2, remoteColor, remoteName, true);
+                remoteSnake.buffs.invincible = Date.now() + 3000;
                 allSnakes.push(remoteSnake);
             }
 
@@ -386,7 +388,7 @@
             initGameUI();
             
             if (gameMode !== 'client') {
-                requestAnimationFrame(hostGameLoop);
+                gameLoopId = requestAnimationFrame(hostGameLoop);
             }
         }
 
@@ -399,9 +401,8 @@
             document.getElementById('continue-btn').style.display = 'block'; 
         }
 
-        // --- 이어하기 & 종료 ---
         document.getElementById('continue-btn').addEventListener('click', () => {
-            initAudio(); bgmSound.play().catch(()=>{});
+            initAudio(); safePlayBGM();
             
             if (gameMode === 'client') {
                 p2pConnection.send({ type: 'continue' });
@@ -431,7 +432,6 @@
             document.getElementById('game-over-screen').style.display = 'flex';
         }
 
-        // --- 팩토리 함수들 ---
         function createSnake(x, y, color, name, isPlayer = false, baseSpeed = 4) {
             return {
                 x: x, y: y, radius: 15, baseSpeed: baseSpeed, speed: baseSpeed,
@@ -478,9 +478,9 @@
             if (gameMode === 'host' && p2pConnection) p2pConnection.send({ type: 'sound', soundType: type });
         }
         
-        // 2.04 핵심 버그 수정: 배열 강제 삭제(splice) 제거, isDead 태그만 부착
+        // 2.05 가장 중요한 부분: 배열 삭제 함수 완전 배제 및 순수 플래그 처리
         function die(deadSnake) {
-            if (deadSnake.isDead) return; // 중복 실행 방지
+            if (deadSnake.isDead) return;
             deadSnake.isDead = true;
 
             if (deadSnake.isPlayer) {
@@ -492,6 +492,12 @@
                 } 
             } else {
                 broadcastSound('enemy_death');
+                setTimeout(() => {
+                    if(!isPaused && isPlaying) {
+                        let bot = spawnEnemy(4);
+                        enemies.push(bot); allSnakes.push(bot);
+                    }
+                }, 2000); 
             }
              
             createExplosion(deadSnake.x, deadSnake.y, deadSnake.color, 40);
@@ -503,27 +509,18 @@
                     createExplosion(pos.x, pos.y, deadSnake.color, 5); 
                 }
             }
-            
-            if (!deadSnake.isPlayer) {
-                setTimeout(() => {
-                    if(!isPaused && isPlaying) {
-                        let bot = spawnEnemy(4);
-                        enemies.push(bot); allSnakes.push(bot);
-                    }
-                }, 2000); 
-            }
         }
 
-        // --- 방장 메인 루프 (업데이트 연산) ---
+        // --- 메인 게임 루프 ---
         function updateHostLogic() {
             if (!isPlaying || isPaused) return; 
             const now = Date.now();
 
-            if (!snake.isDead) snake.angle = mouse.angle;
+            if (snake && !snake.isDead) snake.angle = mouse.angle;
 
             for (let i = allSnakes.length - 1; i >= 0; i--) {
                 let s = allSnakes[i];
-                if (s.isDead) continue;
+                if (!s || s.isDead) continue;
 
                 const isInvincible = now < s.buffs.invincible;
                 s.speed = (now < s.buffs.speed) ? s.baseSpeed * 1.3 : s.baseSpeed;
@@ -665,7 +662,7 @@
                 if (p.life <= 0 || p.radius < 0.5) particles.splice(i, 1);
             }
 
-            // 배열 정리: 죽은 뱀들을 연산 루프가 끝난 뒤 한 번에 정리하여 에러 방지
+            // 모든 연산이 끝난 후 배열을 안전하게 정리
             allSnakes = allSnakes.filter(s => !s.isDead);
             enemies = enemies.filter(s => !s.isDead);
             updateLeaderboard(allSnakes);
@@ -683,7 +680,6 @@
             }
         }
 
-        // --- 클라이언트 & 호스트 렌더링 ---
         function renderClient() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             if (!isPlaying) return;
@@ -799,13 +795,21 @@
             }
         }
 
+        // --- 메인 루프 실행부 (안전 장치 추가) ---
         function hostGameLoop() {
-            updateHostLogic(); 
-            renderClient();    
-            if (gameMode !== 'client') requestAnimationFrame(hostGameLoop);
+            try {
+                updateHostLogic(); 
+                renderClient();    
+            } catch (e) {
+                console.error("Game Loop Crashed: ", e);
+            }
+            if (gameMode !== 'client' && isPlaying) {
+                gameLoopId = requestAnimationFrame(hostGameLoop);
+            }
         }
 
         function updateLeaderboard(snakesArray) {
+            if(!snakesArray) return;
             let sorted = [...snakesArray].sort((a, b) => b.score - a.score);
             const maxDisp = (window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) ? 4 : 10;
             let html = '';
@@ -819,7 +823,6 @@
             }
             leaderboardList.innerHTML = html;
         }
-
     });
 </script>
 </body>
