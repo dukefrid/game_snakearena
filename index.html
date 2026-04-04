@@ -75,8 +75,8 @@
 <body>
 
     <div id="start-screen">
-        <h1>🐍 Snake Battle Arena</h1>
-        <div class="version-text">ver 2.02 (Multiplayer)</div>
+        <h1>🐍 Snake Item Arena</h1>
+        <div class="version-text">ver 2.03 (Arena Fix)</div>
         
         <div class="menu-group">
             <label>Game Mode</label>
@@ -250,11 +250,17 @@
         // --- 멀티플레이 통신 설정 ---
         function initPeer(pin, isHost) {
             const peerId = 'snake201-' + pin;
-            /* Render에 서버를 구축했다면 아래처럼 옵션을 추가합니다.
-               peer = new Peer(peerId, { host: 'game-snakearena.onrender.com', port: 443, secure: true, path: '/' }); 
-			   
-               지금은 무료 공용 서버를 사용합니다.
+            
+            /* Render 전용 서버 적용을 원하시면 아래 주석을 풀고 사용하세요 */
+            /*
+            peer = new Peer(peerId, {
+                host: 'game-snakearena.onrender.com',
+                port: 443,
+                secure: true,
+                path: '/'
+            });
             */
+            // 일단은 공용 서버 기본값 (오류 시 바로 테스트 가능하도록 유지)
             peer = new Peer(peerId);
 
             if (isHost) {
@@ -299,7 +305,6 @@
         // --- 호스트 연결 완료 시 ---
         function setupHostConnection() {
             p2pConnection.on('open', () => {
-                // 접속자 닉네임/색상 받기 대기
                 p2pConnection.on('data', data => {
                     if (data.type === 'init') {
                         startGame('host', data.nickname, data.color);
@@ -324,16 +329,13 @@
 
                 initGameUI();
                 
-                // 방장으로부터 화면 상태 수신
                 p2pConnection.on('data', data => {
                     if (data.type === 'state') {
-                        // 수신받은 데이터로 화면 덮어쓰기
                         foods = data.foods;
                         items = data.items;
                         bullets = data.bullets;
                         particles = data.particles;
                         
-                        // 뱀 분리 (내가 조종하는 뱀을 찾아 카메라를 고정해야 함)
                         allSnakes = data.snakes;
                         snake = allSnakes.find(s => s.name === nickname);
                         
@@ -344,7 +346,6 @@
                     }
                 });
 
-                // 클라이언트는 1초에 30번 마우스 각도 전송
                 setInterval(() => {
                     if (isPlaying && !isPaused && snake && !snake.isDead) {
                         p2pConnection.send({ type: 'input', angle: mouse.angle });
@@ -370,18 +371,15 @@
             isPaused = false; 
             clearInterval(itemSpawnInterval);
 
-            // 방장 뱀 생성
             snake = createSnake(WORLD_SIZE / 2 - 100, WORLD_SIZE / 2, skinColor, nickname, true);
             allSnakes.push(snake);
 
-            // 멀티 뱀 생성
             if (gameMode === 'host' && remoteName) {
                 remoteSnake = createSnake(WORLD_SIZE / 2 + 100, WORLD_SIZE / 2, remoteColor, remoteName, true);
                 allSnakes.push(remoteSnake);
             }
 
             for (let i = 0; i < FOOD_COUNT; i++) spawnFood();
-            // 호스트일때도 봇을 넣어 난전을 만듭니다
             for (let i = 0; i < ENEMY_COUNT; i++) {
                 let bot = spawnEnemy(4);
                 enemies.push(bot);
@@ -391,7 +389,6 @@
             itemSpawnInterval = setInterval(spawnItem, 5000);
             initGameUI();
             
-            // 호스트는 게임 루프를 돌림
             if (gameMode !== 'client') {
                 requestAnimationFrame(hostGameLoop);
             }
@@ -404,11 +401,10 @@
             isPlaying = true;
             document.getElementById('score').innerText = "0";
             
-            // 싱글(아레나)일 때만 컨티뉴 지원, 멀티는 방장/접속자 상태 꼬임 방지를 위해 일단 제외하거나 간소화
             if(gameMode === 'arena') {
                 document.getElementById('continue-btn').style.display = 'block';
             } else {
-                document.getElementById('continue-btn').style.display = 'block'; // 멀티도 컨티뉴 가능
+                document.getElementById('continue-btn').style.display = 'block'; 
             }
         }
 
@@ -417,14 +413,13 @@
             initAudio(); bgmSound.play().catch(()=>{});
             
             if (gameMode === 'client') {
-                // 접속자는 방장에게 부활 신호 전송
                 p2pConnection.send({ type: 'continue' });
             } else {
                 const nickname = document.getElementById('nickname').value || 'Player';
                 const skinColor = document.getElementById('skin-color').value;
                 snake = createSnake(lastPlayerDeathX, lastPlayerDeathY, skinColor, nickname, true);
                 snake.buffs.invincible = Date.now() + 3000;
-                allSnakes.push(snake); // 연산 배열에 재추가
+                allSnakes.push(snake); 
             }
 
             document.getElementById('game-over-screen').style.display = 'none';
@@ -434,7 +429,7 @@
         });
 
         document.getElementById('quit-btn').addEventListener('click', () => {
-            window.location.reload(); // 복잡한 상태 리셋을 위해 새로고침이 가장 깔끔
+            window.location.reload(); 
         });
 
         function showGameOver(finalScore) {
@@ -499,7 +494,7 @@
                     lastPlayerDeathY = Math.max(100, Math.min(WORLD_SIZE - 100, deadSnake.y));
                     showGameOver(snake.score);
                 } else if (deadSnake === remoteSnake) {
-                    // 상대방 뱀 죽음 (상대방 기기에서 팝업이 뜨도록 내버려둠)
+                    // 상대방 뱀 죽음 
                 }
             } else {
                 broadcastSound('enemy_death');
@@ -516,7 +511,6 @@
             }
             
             deadSnake.isDead = true;
-            // 배열에서 제거
             let idx = allSnakes.indexOf(deadSnake);
             if(idx > -1) allSnakes.splice(idx, 1);
             
@@ -535,11 +529,8 @@
             if (!isPlaying || isPaused) return; 
             const now = Date.now();
 
-            /* 내 뱀 각도 적용 */
             if (!snake.isDead) snake.angle = mouse.angle;
-            // remoteSnake 각도는 웹소켓으로 알아서 갱신됨
 
-            // --- 모든 뱀 연산 (플레이어 + 봇) ---
             for (let i = allSnakes.length - 1; i >= 0; i--) {
                 let s = allSnakes[i];
                 if (s.isDead) continue;
@@ -547,7 +538,6 @@
                 const isInvincible = now < s.buffs.invincible;
                 s.speed = (now < s.buffs.speed) ? s.baseSpeed * 1.3 : s.baseSpeed;
 
-                // 봇 AI (방향 결정)
                 if (!s.isPlayer) {
                     if (!isInvincible) {
                         let lookAhead = s.radius * 5; 
@@ -579,7 +569,6 @@
                     }
                 }
 
-                // 이동 및 벽 충돌
                 s.x += Math.cos(s.angle) * s.speed; s.y += Math.sin(s.angle) * s.speed;
                 let hitWall = false;
                 if (s.x < s.radius || s.x > WORLD_SIZE - s.radius || s.y < s.radius || s.y > WORLD_SIZE - s.radius) { 
@@ -590,7 +579,6 @@
                 s.history.unshift({ x: s.x, y: s.y });
                 if (s.history.length > Math.floor(s.tailLength) * 4 + 10) s.history.pop();
 
-                // 뱀끼리 충돌 판정
                 let killed = false;
                 if (isInvincible) {
                     for (let tgt of allSnakes) {
@@ -612,14 +600,12 @@
                     }
                 }
 
-                // 총알 발사
                 if (!killed && now < s.buffs.gun && now - s.lastShootTime > 300) {
                     bullets.push({ x: s.x + Math.cos(s.angle)*(s.radius+5), y: s.y + Math.sin(s.angle)*(s.radius+5), vx: Math.cos(s.angle)*15, vy: Math.sin(s.angle)*15, radius: 6, color: '#ff3300', owner: s });
                     s.lastShootTime = now;
                     if(s.isPlayer) broadcastSound('shoot');
                 }
                 
-                // 가시 판정
                 if (!killed && now < s.buffs.spike) {
                     for (let tgt of allSnakes) {
                         if (s !== tgt && !tgt.isDead && !(now < tgt.buffs.invincible)) {
@@ -631,7 +617,6 @@
                 }
             }
 
-            /* 총알 충돌 */
             for (let i = bullets.length - 1; i >= 0; i--) {
                 let b = bullets[i];
                 b.x += b.vx; b.y += b.vy;
@@ -649,7 +634,6 @@
                 if (hit) bullets.splice(i, 1);
             }
 
-            /* 아이템 획득 */
             for (let i = items.length - 1; i >= 0; i--) {
                 let pickedUp = false;
                 for (let s of allSnakes) {
@@ -662,7 +646,6 @@
                 if (pickedUp) items.splice(i, 1);
             }
 
-            /* 먹이 자석 및 획득 */
             for (let i = foods.length - 1; i >= 0; i--) {
                 let f = foods[i];
                 for (let s of allSnakes) {
@@ -692,11 +675,10 @@
                 if (p.life <= 0 || p.radius < 0.5) particles.splice(i, 1);
             }
 
-            updateLeaderboard();
+            /* 오류를 일으켰던 문제의 구간! 이제 allSnakes를 무사히 전달합니다. */
+            updateLeaderboard(allSnakes);
 
-            // --- 접속자(Client)에게 상태 전송 ---
             if (gameMode === 'host' && p2pConnection) {
-                // 부하를 줄이기 위해 필수 데이터만 추출 (Serialization)
                 const stateData = {
                     type: 'state',
                     snakes: allSnakes.map(s => ({
@@ -717,7 +699,6 @@
             const time = Date.now();
             let targetZoom = 1.0;
             
-            // 내 화면 UI 표시
             if (snake && !snake.isDead) {
                 if(time < snake.buffs.vision) targetZoom = 1 / 1.5;
                 
@@ -730,14 +711,8 @@
                 if (time < snake.buffs.spike) buffText += `<div class="buff-text buff-spike">✹ Spikes: ${Math.ceil((snake.buffs.spike - time)/1000)}s</div>`;
                 buffStatusElement.innerHTML = buffText;
                 
-                // 점수 업데이트 (클라이언트 용)
                 if(gameMode === 'client') document.getElementById('score').innerText = Math.floor(snake.score);
                 
-                // 클라이언트 사망 처리 팝업 트리거
-                if(gameMode === 'client' && document.getElementById('game-over-screen').style.display !== 'flex') {
-                    // 방장이 보낸 상태에서 내가 죽어있다면?
-                    // (이 코드는 render 루프 안이므로 중복 호출 방지를 위해 체크)
-                }
             } else if (snake && snake.isDead && document.getElementById('game-over-screen').style.display !== 'flex') {
                  showGameOver(snake.score);
             }
@@ -753,7 +728,6 @@
                 else ctx.translate(-snake.x, -snake.y);
             }
 
-            // 그리드 및 테두리
             ctx.strokeStyle = '#2a2a4e'; ctx.lineWidth = 2;
             const gridSize = 100;
             if(snake) {
@@ -765,7 +739,6 @@
             }
             ctx.strokeStyle = '#ff3333'; ctx.lineWidth = 15; ctx.strokeRect(0, 0, WORLD_SIZE, WORLD_SIZE);
 
-            // 요소 그리기
             particles.forEach(p => { ctx.globalAlpha = Math.max(0, p.life); ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fillStyle = p.color; ctx.shadowBlur = 10; ctx.shadowColor = p.color; ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1.0; });
             bullets.forEach(b => { ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.fillStyle = b.color; ctx.shadowBlur = 15; ctx.shadowColor = '#ffff00'; ctx.fill(); ctx.shadowBlur = 0; });
             items.forEach(item => {
@@ -782,7 +755,6 @@
                 ctx.fill(); ctx.shadowBlur = 0;
             });
 
-            // 뱀 그리기
             allSnakes.forEach(s => {
                 if (s.isDead) return;
                 const isInv = (time < s.buffs.invincible); const invSpk = isInv ? Math.abs(Math.sin(time / 100)) : 0; const isSpk = (time < s.buffs.spike);
@@ -838,10 +810,9 @@
             }
         }
 
-        // --- 메인 루프 분기 ---
         function hostGameLoop() {
-            updateHostLogic(); // 물리 연산
-            renderClient();    // 화면 그리기
+            updateHostLogic(); 
+            renderClient();    
             if (gameMode !== 'client') requestAnimationFrame(hostGameLoop);
         }
 
@@ -852,7 +823,6 @@
             for (let i = 0; i < Math.min(maxDisp, sorted.length); i++) {
                 const s = sorted[i];
                 const myName = document.getElementById('nickname').value || 'Player';
-                // 내가 조종하는 뱀은 빨간색, 접속한 다른 실제 유저는 파란색 처리
                 let rankClass = '';
                 if (s.name === myName) rankClass = 'class="my-rank"';
                 else if (s.isPlayer) rankClass = 'class="remote-rank"';
