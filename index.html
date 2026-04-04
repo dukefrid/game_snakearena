@@ -76,7 +76,7 @@
 
     <div id="start-screen">
         <h1>🐍 Snake Item Arena</h1>
-        <div class="version-text">ver 2.088 (P2P Connection Fix)</div>
+        <div class="version-text">ver 2.089 (P2P Connection Fix)</div>
         
         <div class="menu-group">
             <label>Game Mode</label>
@@ -288,25 +288,30 @@
         });
 
         // ==============================================================
-        // 2.088 핵심 수정: 방장과 접속자의 PeerJS ID 겹침 오류 해결!
+        // 2.088 핵심 수정부: 방장과 접속자의 ID 충돌 방지 로직
         // ==============================================================
         function initPeer(pin, isHost) {
-            const roomPeerId = 'snake201-' + pin;
+            const hostPeerId = 'snake201-' + pin; // 방장의 고정 ID
 
             if (isHost) {
-                // 1. 방장(Host)은 자신의 주소를 'snake201-핀번호' 로 고정하여 생성합니다.
-                peer = new Peer(roomPeerId, { host: 'game-snakearena.onrender.com', port: 443, secure: true, path: '/' });
+                // 1. 방장(Host)은 지정된 핀 번호로 ID를 생성하여 방을 엽니다.
+                peer = new Peer(hostPeerId, { host: 'game-snakearena.onrender.com', port: 443, secure: true, path: '/' });
                 peer.on('connection', conn => { p2pConnection = conn; setupHostConnection(); });
+                peer.on('error', err => { console.error('Host Error:', err); });
             } else {
-                // 2. 접속자(Client)는 아이디를 적지 않고(자동 부여) 서버에 입장한 뒤,
+                // 2. 접속자(Client)는 ID 없이(랜덤 자동부여) 서버에 접속합니다! (충돌 방지)
                 peer = new Peer({ host: 'game-snakearena.onrender.com', port: 443, secure: true, path: '/' });
                 peer.on('open', () => { 
-                    // 방장의 주소인 'roomPeerId' 로 연결을 요청합니다.
-                    p2pConnection = peer.connect(roomPeerId); 
+                    // 3. 서버에 잘 들어갔다면, 방장의 ID(hostPeerId)를 찾아 연결을 요청합니다.
+                    p2pConnection = peer.connect(hostPeerId); 
                     setupClientConnection(); 
                 });
                 peer.on('error', err => { 
-                    document.getElementById('join-status').innerText = "방을 찾을 수 없습니다!"; 
+                    if (err.type === 'peer-unavailable') {
+                        document.getElementById('join-status').innerText = "방을 찾을 수 없습니다!"; 
+                    } else {
+                        document.getElementById('join-status').innerText = "서버 통신 오류!"; 
+                    }
                 });
             }
         }
@@ -347,7 +352,6 @@
         }
 
         function setupClientConnection() {
-            // 접속이 수락되면 UI 업데이트
             p2pConnection.on('open', () => {
                 gameMode = 'client';
                 const nickname = document.getElementById('nickname').value || 'Player'; const skinColor = document.getElementById('skin-color').value;
@@ -377,10 +381,6 @@
                 });
 
                 setInterval(() => { if (isPlaying && !isPaused && snake && !snake.isDead) p2pConnection.send({ type: 'input', angle: mouse.angle }); }, 1000 / 30);
-            });
-            // 방장 측에서 연결을 거부하거나 통신이 끊겼을 때
-            p2pConnection.on('error', err => {
-                document.getElementById('join-status').innerText = "연결할 수 없습니다!";
             });
         }
 
