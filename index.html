@@ -76,7 +76,7 @@
 
     <div id="start-screen">
         <h1>🐍 Snake Item Arena</h1>
-        <div class="version-text">ver 2.087 (Ironclad Rendering)</div>
+        <div class="version-text">ver 2.088 (P2P Connection Fix)</div>
         
         <div class="menu-group">
             <label>Game Mode</label>
@@ -287,15 +287,27 @@
             });
         });
 
+        // ==============================================================
+        // 2.088 핵심 수정: 방장과 접속자의 PeerJS ID 겹침 오류 해결!
+        // ==============================================================
         function initPeer(pin, isHost) {
-            const peerId = 'snake201-' + pin;
-            peer = new Peer(peerId, { host: 'game-snakearena.onrender.com', port: 443, secure: true, path: '/' });
+            const roomPeerId = 'snake201-' + pin;
 
             if (isHost) {
+                // 1. 방장(Host)은 자신의 주소를 'snake201-핀번호' 로 고정하여 생성합니다.
+                peer = new Peer(roomPeerId, { host: 'game-snakearena.onrender.com', port: 443, secure: true, path: '/' });
                 peer.on('connection', conn => { p2pConnection = conn; setupHostConnection(); });
             } else {
-                peer.on('open', () => { p2pConnection = peer.connect(peerId); setupClientConnection(); });
-                peer.on('error', err => { document.getElementById('join-status').innerText = "방을 찾을 수 없습니다!"; });
+                // 2. 접속자(Client)는 아이디를 적지 않고(자동 부여) 서버에 입장한 뒤,
+                peer = new Peer({ host: 'game-snakearena.onrender.com', port: 443, secure: true, path: '/' });
+                peer.on('open', () => { 
+                    // 방장의 주소인 'roomPeerId' 로 연결을 요청합니다.
+                    p2pConnection = peer.connect(roomPeerId); 
+                    setupClientConnection(); 
+                });
+                peer.on('error', err => { 
+                    document.getElementById('join-status').innerText = "방을 찾을 수 없습니다!"; 
+                });
             }
         }
 
@@ -335,6 +347,7 @@
         }
 
         function setupClientConnection() {
+            // 접속이 수락되면 UI 업데이트
             p2pConnection.on('open', () => {
                 gameMode = 'client';
                 const nickname = document.getElementById('nickname').value || 'Player'; const skinColor = document.getElementById('skin-color').value;
@@ -364,6 +377,10 @@
                 });
 
                 setInterval(() => { if (isPlaying && !isPaused && snake && !snake.isDead) p2pConnection.send({ type: 'input', angle: mouse.angle }); }, 1000 / 30);
+            });
+            // 방장 측에서 연결을 거부하거나 통신이 끊겼을 때
+            p2pConnection.on('error', err => {
+                document.getElementById('join-status').innerText = "연결할 수 없습니다!";
             });
         }
 
@@ -569,7 +586,6 @@
             s.y = Math.max(s.radius, Math.min(WORLD_SIZE - s.radius, s.y));
             s.history.unshift({ x: s.x, y: s.y });
             
-            // 꼬리 무한루프 방어벽
             if (!Number.isFinite(s.tailLength) || s.tailLength > 1000) s.tailLength = 1000;
             if (s.history.length > Math.floor(s.tailLength) * 4 + 10) s.history.pop();
             
@@ -585,7 +601,6 @@
             }
             s.tailLength += growthRate; 
             s.radius += sizeIncrease; 
-            // 반지름 무한대 방어벽
             s.radius = Math.max(5, Math.min(60, s.radius));
             s.score += scoreAdd;
             
@@ -813,12 +828,8 @@
             }
         }
 
-        // ==============================================================
-        // 2.087 렌더링 최적화 및 무한 루프 차단 철통 방어
-        // ==============================================================
         function draw() {
             try {
-                // 어떤 에러가 나더라도 무조건 시점 초기화로 시작
                 ctx.setTransform(1, 0, 0, 1, 0, 0);
                 if (!canvas.width || !canvas.height) resizeCanvas();
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -830,7 +841,6 @@
                 if (snake && !snake.isDead && time < snake.buffs.vision) targetZoom = 1 / 1.5;
                 if (!isPaused && isPlaying) currentZoom += (targetZoom - currentZoom) * 0.05;
                 
-                // 줌 팩터가 무한대가 되거나 0이 되는 것을 원천 차단 (가장 강력한 보호막)
                 if (!Number.isFinite(currentZoom)) currentZoom = 1.0;
                 currentZoom = Math.max(0.3, Math.min(2.0, currentZoom));
 
@@ -847,8 +857,6 @@
                     ctx.translate(-camX, -camY);
                 }
 
-                // 무한 루프를 유발했던 카메라 추적식 바둑판 그리기를 버리고, 
-                // 월드 맵 크기(3000)만큼만 고정 렌더링하는 절대 안전 방식을 적용합니다.
                 ctx.strokeStyle = '#2a2a4e'; ctx.lineWidth = 2; const gridSize = 100;
                 for (let x = 0; x <= WORLD_SIZE; x += gridSize) { 
                     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, WORLD_SIZE); ctx.stroke(); 
@@ -942,7 +950,6 @@
                             aIcons.forEach((text, idx) => { let yPos = s.y - safeRadius - 40 - (idx * 45); ctx.strokeText(text, s.x, yPos); ctx.fillText(text, s.x, yPos); });
                         }
                     } catch(e) {
-                        // 특정 뱀의 데이터가 손상되어도 이 뱀만 스킵하고 화면 전체 렌더링은 보호합니다.
                         console.error("Single Snake Draw Error", e);
                     }
                 };
@@ -954,7 +961,6 @@
             } catch(e) {
                 console.error("Render block error: ", e);
             } finally {
-                // 어떤 에러가 나더라도 무조건 캔버스 저장 상태를 원래대로 복구시킵니다.
                 ctx.restore();
             }
 
