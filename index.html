@@ -3,143 +3,117 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Snake Item Arena</title>
+    <title>Snake Item Arena Multiplayer</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        /* 모바일 스크롤 및 텍스트 선택 방지 */
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
             overflow: hidden; background-color: #1a1a2e;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            touch-action: none; 
-            -webkit-user-select: none; 
-            user-select: none;
+            touch-action: none; user-select: none; -webkit-user-select: none;
         }
-        canvas { 
-            display: block; 
-            touch-action: none; 
-        }
+        canvas { display: block; touch-action: none; }
         
-        /* 인게임 우측 상단 UI */
         #ui-layer {
             position: absolute; top: 20px; right: 20px;
-            color: white; font-weight: bold;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.8); 
-            pointer-events: none; 
-            display: none; 
-            flex-direction: column; align-items: flex-end;
-            z-index: 10;
+            color: white; font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); 
+            pointer-events: none; display: none; flex-direction: column; align-items: flex-end; z-index: 10;
         }
-        
-        .top-row {
-            display: flex; align-items: center; gap: 20px; margin-bottom: 10px;
-        }
+        .top-row { display: flex; align-items: center; gap: 20px; margin-bottom: 10px; }
         #score-display { font-size: 24px; }
-        
         .buff-text { font-size: 18px; margin-top: 5px; text-align: right; }
-        .buff-magnet { color: #3498db; }
-        .buff-speed { color: #f1c40f; }
-        .buff-vision { color: #9b59b6; }
-        .buff-invincible { color: #f39c12; text-shadow: 0 0 8px #f39c12; }
-        .buff-gun { color: #e74c3c; text-shadow: 0 0 8px #e74c3c; }
-        .buff-spike { color: #bdc3c7; text-shadow: 0 0 8px #bdc3c7; }
+        .buff-magnet { color: #3498db; } .buff-speed { color: #f1c40f; } .buff-vision { color: #9b59b6; }
+        .buff-invincible { color: #f39c12; text-shadow: 0 0 8px #f39c12; } .buff-gun { color: #e74c3c; text-shadow: 0 0 8px #e74c3c; } .buff-spike { color: #bdc3c7; text-shadow: 0 0 8px #bdc3c7; }
         
         #leaderboard {
-            margin-top: 20px; background-color: rgba(0, 0, 0, 0.6);
-            padding: 15px; border-radius: 10px; width: 180px; text-align: left;
+            margin-top: 20px; background-color: rgba(0, 0, 0, 0.6); padding: 15px; border-radius: 10px; width: 180px; text-align: left;
         }
         #leaderboard h3 { margin: 0 0 10px 0; font-size: 18px; color: #ffd700; text-align: center; }
         #leaderboard ol { margin: 0; padding-left: 25px; font-size: 16px; }
         #leaderboard li { margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .my-rank { color: #ff6b6b; font-weight: bold; text-shadow: 0 0 5px #ff6b6b; }
+        .remote-rank { color: #3498db; font-weight: bold; text-shadow: 0 0 5px #3498db; }
 
-        /* 시작 화면 */
+        /* 시작 화면 UI */
         #start-screen {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background-color: rgba(26, 26, 46, 0.95);
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-            z-index: 100; color: white;
+            background-color: rgba(26, 26, 46, 0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; color: white;
         }
-        #start-screen h1 { 
-            font-size: 50px; color: #ff6b6b; 
-            text-shadow: 0 0 20px rgba(255, 107, 107, 0.5); 
-            margin-bottom: 5px; 
-            text-align: center;
-        }
-        .version-text {
-            font-size: 18px; color: #888; margin-bottom: 30px;
-            letter-spacing: 2px; font-weight: bold;
-        }
+        #start-screen h1 { font-size: 50px; color: #ff6b6b; text-shadow: 0 0 20px rgba(255, 107, 107, 0.5); margin-bottom: 5px; text-align: center; }
+        .version-text { font-size: 18px; color: #888; margin-bottom: 30px; letter-spacing: 2px; font-weight: bold; }
         
-        .menu-group { margin-bottom: 20px; display: flex; flex-direction: column; align-items: flex-start; width: 250px; }
+        .menu-group { margin-bottom: 20px; display: flex; flex-direction: column; align-items: flex-start; width: 300px; }
         .menu-group label { margin-bottom: 5px; font-size: 18px; color: #ccc; }
-        .menu-group input[type="text"], .menu-group select {
-            width: 100%; padding: 10px; font-size: 16px; border-radius: 5px; border: none; box-sizing: border-box;
-        }
-        .menu-group input[type="color"] {
-            width: 100%; height: 40px; border: none; border-radius: 5px; cursor: pointer; background: none;
-        }
+        .menu-group input[type="text"], .menu-group select { width: 100%; padding: 10px; font-size: 16px; border-radius: 5px; border: none; box-sizing: border-box; }
+        .menu-group input[type="color"] { width: 100%; height: 40px; border: none; border-radius: 5px; cursor: pointer; background: none; }
         
-        .menu-btn {
-            margin-top: 20px; padding: 15px 30px; font-size: 22px; font-weight: bold;
-            background-color: #ff6b6b; color: white; border: none; border-radius: 8px; cursor: pointer;
-            transition: 0.2s; pointer-events: auto;
-        }
-        .menu-btn:hover { background-color: #ff4c4c; transform: scale(1.05); }
+        .radio-group { display: flex; gap: 15px; width: 100%; font-size: 18px; margin-bottom: 10px; justify-content: center;}
+        .radio-group label { display: flex; align-items: center; gap: 5px; cursor: pointer; color: white;}
+        
+        .menu-btn { padding: 15px 30px; font-size: 22px; font-weight: bold; background-color: #ff6b6b; color: white; border: none; border-radius: 8px; cursor: pointer; transition: 0.2s; width: 100%; margin-top: 10px;}
+        .menu-btn:hover { background-color: #ff4c4c; transform: scale(1.02); }
+        .btn-blue { background-color: #3498db; } .btn-blue:hover { background-color: #2980b9; }
 
-        /* 컨트롤 버튼 */
-        #controls-layer {
-            display: none; 
-            gap: 10px;
-        }
-        .ctrl-btn {
-            pointer-events: auto; 
-            padding: 8px 12px; font-size: 14px; font-weight: bold;
-            background-color: rgba(0, 0, 0, 0.7); color: white;
-            border: 2px solid #fff; border-radius: 8px; cursor: pointer;
-            transition: 0.2s;
-        }
+        #multiplayer-ui { display: none; width: 300px; text-align: center; margin-top: 10px; background: rgba(0,0,0,0.5); padding: 20px; border-radius: 10px;}
+        .pin-display { font-size: 36px; color: #ffd700; letter-spacing: 5px; margin: 15px 0; text-shadow: 0 0 10px #ffd700; }
+        #join-input { text-align: center; font-size: 24px; letter-spacing: 5px; text-transform: uppercase; }
+
+        #controls-layer { display: none; gap: 10px; }
+        .ctrl-btn { pointer-events: auto; padding: 8px 12px; font-size: 14px; font-weight: bold; background-color: rgba(0, 0, 0, 0.7); color: white; border: 2px solid #fff; border-radius: 8px; cursor: pointer; transition: 0.2s; }
         .ctrl-btn:hover { background-color: #ff6b6b; border-color: #ff6b6b; }
 
-        /* 게임 오버 화면 */
         #game-over-screen {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background-color: rgba(0, 0, 0, 0.6);
-            display: none; flex-direction: column; justify-content: center; align-items: center;
-            z-index: 100; color: white; text-align: center;
+            background-color: rgba(0, 0, 0, 0.6); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; color: white; text-align: center;
         }
-        #game-over-screen h2 {
-            font-size: 60px; color: #ff3333; text-shadow: 0 0 20px #ff3333; margin-bottom: 10px;
-        }
-        #game-over-screen p {
-            font-size: 30px; margin-bottom: 40px; color: #fff; text-shadow: 2px 2px 5px #000;
-        }
+        #game-over-screen h2 { font-size: 60px; color: #ff3333; text-shadow: 0 0 20px #ff3333; margin-bottom: 10px; }
+        #game-over-screen p { font-size: 30px; margin-bottom: 40px; color: #fff; text-shadow: 2px 2px 5px #000; }
         .btn-group { display: flex; gap: 20px; }
-        .quit-btn { background-color: #7f8c8d; }
-        .quit-btn:hover { background-color: #95a5a6; }
-
+        .quit-btn { background-color: #7f8c8d; } .quit-btn:hover { background-color: #95a5a6; }
     </style>
 </head>
 <body>
 
     <div id="start-screen">
-        <h1>🐍 Snake Item Arena</h1>
-        <div class="version-text">ver 1.091</div> <div class="menu-group">
-            <label for="nickname">Nickname</label>
-            <input type="text" id="nickname" value="Player" maxlength="10">
-        </div>
+        <h1>🐍 Snake Battle Arena</h1>
+        <div class="version-text">ver 2.01 (Multiplayer)</div>
+        
         <div class="menu-group">
-            <label for="difficulty">Difficulty</label>
-            <select id="difficulty">
-                <option value="easy">Easy</option>
-                <option value="normal" selected>Normal</option>
-                <option value="hard">Hard</option>
-            </select>
+            <label>Game Mode</label>
+            <div class="radio-group">
+                <label><input type="radio" name="mode" value="arena" checked> 아레나 (싱글)</label>
+                <label><input type="radio" name="mode" value="1v1"> 1:1 대전</label>
+            </div>
+        </div>
+
+        <div class="menu-group">
+            <label for="nickname">Nickname</label>
+            <input type="text" id="nickname" maxlength="12">
         </div>
         <div class="menu-group">
             <label for="skin-color">Skin Color</label>
             <input type="color" id="skin-color" value="#ff6b6b">
         </div>
+
         <button id="start-btn" class="menu-btn">Game Start</button>
+
+        <div id="multiplayer-ui">
+            <button id="btn-create-room" class="menu-btn">방 만들기 (Host)</button>
+            <div id="host-wait" style="display: none;">
+                <p>입장 코드를 친구에게 알려주세요!</p>
+                <div id="room-pin" class="pin-display">----</div>
+                <p style="font-size: 14px; color: #aaa;">접속 대기 중...</p>
+            </div>
+
+            <hr style="border-color: #555; margin: 20px 0;">
+
+            <button id="btn-join-room" class="menu-btn btn-blue">입장하기 (Join)</button>
+            <div id="join-wait" style="display: none; margin-top: 15px;">
+                <input type="text" id="join-input" maxlength="4" placeholder="CODE">
+                <button id="btn-connect-room" class="menu-btn btn-blue" style="margin-top: 10px;">접속</button>
+                <p id="join-status" style="font-size: 14px; color: #ff6b6b; margin-top: 10px;"></p>
+            </div>
+        </div>
     </div>
 
     <div id="ui-layer">
@@ -161,7 +135,7 @@
         <h2>GAME OVER</h2>
         <p>Final Score: <span id="final-score">0</span></p>
         <div class="btn-group">
-            <button id="continue-btn" class="menu-btn">Continue (이어하기)</button>
+            <button id="continue-btn" class="menu-btn" style="display:none;">Continue (이어하기)</button>
             <button id="quit-btn" class="menu-btn quit-btn">Quit (타이틀로)</button>
         </div>
     </div>
@@ -169,304 +143,341 @@
     <canvas id="gameCanvas"></canvas>
 
 <script>
-    /* 스크립트 실행 보호 장치 */
     window.addEventListener('DOMContentLoaded', () => {
+        // --- 랜덤 닉네임 생성 ---
+        const randomId = Math.floor(1000 + Math.random() * 9000);
+        document.getElementById('nickname').value = 'Player_' + randomId;
+
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const scoreElement = document.getElementById('score');
-        const buffStatusElement = document.getElementById('buff-status');
-        const leaderboardList = document.getElementById('leaderboard-list');
-        
-        const uiLayer = document.getElementById('ui-layer');
-        const startScreen = document.getElementById('start-screen');
-        const startBtn = document.getElementById('start-btn');
-        const controlsLayer = document.getElementById('controls-layer');
-        const pauseBtn = document.getElementById('pause-btn');
-        const fullscreenBtn = document.getElementById('fullscreen-btn');
-
-        const gameOverScreen = document.getElementById('game-over-screen');
-        const finalScoreElement = document.getElementById('final-score');
-        const continueBtn = document.getElementById('continue-btn');
-        const quitBtn = document.getElementById('quit-btn');
-
-        canvas.width = window.innerWidth || 800; 
-        canvas.height = window.innerHeight || 600;
+        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
         const WORLD_SIZE = 3000;
         const FOOD_COUNT = 200; 
-        const BOT_NAMES = ['Alpha', 'Beta', 'Gamma', 'Viper', 'Cobra', 'Python', 'Mamba', 'Boa', 'Anaconda', 'Slytherin', 'Kraken', 'Reaper', 'Shadow', 'Ghost', 'Ninja'];
+        const ENEMY_COUNT = 10;
+        const BOT_NAMES = ['Alpha', 'Beta', 'Gamma', 'Viper', 'Cobra', 'Python', 'Kraken'];
 
+        let gameMode = 'arena'; // 'arena', 'host', 'client'
         let isPlaying = false;
         let isPaused = false; 
-        let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
-
-        /* 죽은 위치를 기억하기 위한 변수 */
+        let mouse = { x: canvas.width / 2, y: canvas.height / 2, angle: 0 };
+        let currentZoom = 1.0; 
         let lastPlayerDeathX = WORLD_SIZE / 2;
         let lastPlayerDeathY = WORLD_SIZE / 2;
 
-        /* 오디오 시스템 (Web Audio API & HTMLAudioElement) */
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        let audioCtx;
-        
-        /* 외부 효과음 및 BGM 로드 */
-        const explosionSound = new Audio('explosion.mp3');
-        const myExplosionSound = new Audio('myExplosion.mp3');
-        const bgmSound = new Audio('snake_bgm.mp3');
-        bgmSound.loop = true;  /* BGM 무한 반복 */
-        bgmSound.volume = 0.3; /* BGM 볼륨 30% 설정 */
-
-        function initAudio() {
-            if (!audioCtx) {
-                audioCtx = new AudioContext();
-            }
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-        }
-
-        function playSound(type) {
-            /* 적 폭발음 */
-            if (type === 'enemy_death') {
-                let snd = explosionSound.cloneNode();
-                snd.play().catch(err => console.log('Audio play blocked:', err));
-                return;
-            }
-            
-            /* 플레이어 폭발음 */
-            if (type === 'player_death') {
-                let snd = myExplosionSound.cloneNode();
-                snd.play().catch(err => console.log('Audio play blocked:', err));
-                return;
-            }
-
-            if (!audioCtx) return;
-            const gainNode = audioCtx.createGain();
-            gainNode.connect(audioCtx.destination);
-            const now = audioCtx.currentTime;
-
-            if (type === 'item') {
-                const osc = audioCtx.createOscillator();
-                osc.connect(gainNode);
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(400, now);
-                osc.frequency.exponentialRampToValueAtTime(800, now + 0.1);
-                osc.frequency.exponentialRampToValueAtTime(1200, now + 0.2);
-                gainNode.gain.setValueAtTime(0.1, now);
-                gainNode.gain.linearRampToValueAtTime(0, now + 0.3);
-                osc.start(now);
-                osc.stop(now + 0.3);
-            } else if (type === 'shoot') {
-                const osc = audioCtx.createOscillator();
-                osc.connect(gainNode);
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(880, now);
-                osc.frequency.exponentialRampToValueAtTime(110, now + 0.1);
-                gainNode.gain.setValueAtTime(0.05, now);
-                gainNode.gain.linearRampToValueAtTime(0, now + 0.1);
-                osc.start(now);
-                osc.stop(now + 0.1);
-            }
-        }
-
-        window.addEventListener('mousemove', (e) => { 
-            mouse.x = e.clientX; mouse.y = e.clientY; 
-        });
-
-        window.addEventListener('resize', () => { 
-            canvas.width = window.innerWidth || 800; 
-            canvas.height = window.innerHeight || 600; 
-        });
-
-        window.addEventListener('touchstart', (e) => {
-            if(e.target === canvas) e.preventDefault(); 
-            mouse.x = e.touches[0].clientX;
-            mouse.y = e.touches[0].clientY;
-        }, { passive: false });
-
-        window.addEventListener('touchmove', (e) => {
-            if(e.target === canvas) e.preventDefault(); 
-            mouse.x = e.touches[0].clientX;
-            mouse.y = e.touches[0].clientY;
-        }, { passive: false });
-
-        fullscreenBtn.addEventListener('click', () => {
-            let doc = window.document;
-            let docEl = doc.documentElement;
-
-            let requestFullScreen = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen || docEl.msRequestFullscreen;
-            let cancelFullScreen = doc.exitFullscreen || doc.mozCancelFullScreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
-
-            if (!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
-                if (requestFullScreen) {
-                    requestFullScreen.call(docEl).catch(err => {
-                        alert("전체화면을 시작할 수 없습니다.");
-                    });
-                    fullscreenBtn.innerText = "✖ Exit Full";
-                } else {
-                    alert("이 브라우저는 전체화면을 지원하지 않습니다.");
-                }
-            } else {
-                if (cancelFullScreen) {
-                    cancelFullScreen.call(doc);
-                    fullscreenBtn.innerText = "⛶ Full Screen";
-                }
-            }
-        });
-
-        pauseBtn.addEventListener('click', () => {
-            if (!isPlaying || snake.isDead) return; 
-            isPaused = !isPaused;
-            pauseBtn.innerText = isPaused ? "▶ Resume" : "⏸ Pause";
-            
-            if (isPaused) {
-                bgmSound.pause();
-            } else {
-                bgmSound.play().catch(err => console.log('BGM play blocked:', err));
-            }
-        });
-
-        let snake;
+        let snake;         // 내 뱀
+        let remoteSnake;   // 상대방 뱀 (멀티 전용)
         let foods = [];
         let enemies = [];
         let items = [];
         let particles = []; 
         let bullets = []; 
-        let currentZoom = 1.0; 
         let itemSpawnInterval;
 
-        startBtn.addEventListener('click', () => {
-            initAudio(); 
-            
-            bgmSound.currentTime = 0;
-            bgmSound.play().catch(err => console.log('BGM play blocked:', err));
+        // --- P2P 통신 변수 ---
+        let peer = null;
+        let p2pConnection = null;
 
-            const nickname = document.getElementById('nickname').value || 'Player';
-            const difficulty = document.getElementById('difficulty').value;
-            const skinColor = document.getElementById('skin-color').value;
+        /* 오디오 시스템 (Web Audio API + HTMLAudioElement) */
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx;
+        const explosionSound = new Audio('explosion.mp3');
+        const myExplosionSound = new Audio('myExplosion.mp3');
+        const bgmSound = new Audio('snake_bgm.mp3');
+        bgmSound.loop = true; bgmSound.volume = 0.3;
 
-            let enemyCount = 10;
-            let enemyBaseSpeed = 4;
-
-            if (difficulty === 'easy') { enemyCount = 5; enemyBaseSpeed = 3.5; }
-            else if (difficulty === 'hard') { enemyCount = 15; enemyBaseSpeed = 4.8; }
-
-            foods = []; enemies = []; items = []; particles = []; bullets = [];
-            isPaused = false; 
-            pauseBtn.innerText = "⏸ Pause";
-            clearInterval(itemSpawnInterval);
-
-            /* 새 게임은 중앙에서 시작 */
-            snake = createSnake(WORLD_SIZE / 2, WORLD_SIZE / 2, skinColor, nickname, true);
-            
-            for (let i = 0; i < FOOD_COUNT; i++) spawnFood();
-            for (let i = 0; i < enemyCount; i++) spawnEnemy(enemyBaseSpeed);
-
-            itemSpawnInterval = setInterval(spawnItem, 5000);
-
-            startScreen.style.display = 'none';
-            uiLayer.style.display = 'flex';
-            controlsLayer.style.display = 'flex'; 
-            isPlaying = true;
-            scoreElement.innerText = "0";
-        });
-
-        continueBtn.addEventListener('click', () => {
-            initAudio(); 
-            bgmSound.play().catch(err => console.log('BGM play blocked:', err));
-
-            const nickname = document.getElementById('nickname').value || 'Player';
-            const skinColor = document.getElementById('skin-color').value;
-
-            /* 죽었던 위치에서 이어서 생성 */
-            snake = createSnake(lastPlayerDeathX, lastPlayerDeathY, skinColor, nickname, true);
-            snake.buffs.invincible = Date.now() + 3000;
-
-            gameOverScreen.style.display = 'none';
-            uiLayer.style.display = 'flex';
-            controlsLayer.style.display = 'flex'; 
-            
-            isPaused = false;
-            pauseBtn.innerText = "⏸ Pause";
-            scoreElement.innerText = "0";
-        });
-
-        quitBtn.addEventListener('click', () => {
-            bgmSound.pause();
-            bgmSound.currentTime = 0;
-            isPlaying = false; 
-
-            gameOverScreen.style.display = 'none';
-            startScreen.style.display = 'flex';
-            clearInterval(itemSpawnInterval);
-        });
-
-        function gameOver() {
-            bgmSound.pause(); 
-            finalScoreElement.innerText = Math.floor(snake.score);
-            uiLayer.style.display = 'none';
-            controlsLayer.style.display = 'none'; 
-            gameOverScreen.style.display = 'flex';
+        function initAudio() {
+            if (!audioCtx) audioCtx = new AudioContext();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
         }
 
-        function createExplosion(x, y, baseColor, count) {
-            for (let i = 0; i < count; i++) {
-                const angle = Math.random() * Math.PI * 2;
-                const speed = Math.random() * 8 + 2; 
-                particles.push({
-                    x: x, y: y,
-                    vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-                    radius: Math.random() * 6 + 3,
-                    color: Math.random() > 0.5 ? baseColor : '#ffffff', 
-                    life: 1.0, decay: Math.random() * 0.03 + 0.02 
+        function playSound(type) {
+            if (type === 'enemy_death') { let snd = explosionSound.cloneNode(); snd.play().catch(()=>{}); return; }
+            if (type === 'player_death') { let snd = myExplosionSound.cloneNode(); snd.play().catch(()=>{}); return; }
+            
+            if (!audioCtx) return;
+            const gainNode = audioCtx.createGain(); gainNode.connect(audioCtx.destination);
+            const now = audioCtx.currentTime;
+
+            if (type === 'item') {
+                const osc = audioCtx.createOscillator(); osc.connect(gainNode); osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, now); osc.frequency.exponentialRampToValueAtTime(1200, now + 0.2);
+                gainNode.gain.setValueAtTime(0.1, now); gainNode.gain.linearRampToValueAtTime(0, now + 0.3);
+                osc.start(now); osc.stop(now + 0.3);
+            } else if (type === 'shoot') {
+                const osc = audioCtx.createOscillator(); osc.connect(gainNode); osc.type = 'square';
+                osc.frequency.setValueAtTime(880, now); osc.frequency.exponentialRampToValueAtTime(110, now + 0.1);
+                gainNode.gain.setValueAtTime(0.05, now); gainNode.gain.linearRampToValueAtTime(0, now + 0.1);
+                osc.start(now); osc.stop(now + 0.1);
+            }
+        }
+
+        // --- 이벤트 리스너 ---
+        window.addEventListener('mousemove', (e) => { 
+            mouse.x = e.clientX; mouse.y = e.clientY; 
+            mouse.angle = Math.atan2(mouse.y - canvas.height/2, mouse.x - canvas.width/2);
+        });
+        window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+        window.addEventListener('touchstart', (e) => { if(e.target===canvas) e.preventDefault(); mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY; mouse.angle = Math.atan2(mouse.y - canvas.height/2, mouse.x - canvas.width/2);}, { passive: false });
+        window.addEventListener('touchmove', (e) => { if(e.target===canvas) e.preventDefault(); mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY; mouse.angle = Math.atan2(mouse.y - canvas.height/2, mouse.x - canvas.width/2);}, { passive: false });
+
+        document.getElementById('fullscreen-btn').addEventListener('click', () => {
+            if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch(()=>{}); document.getElementById('fullscreen-btn').innerText = "✖ Exit"; } 
+            else { document.exitFullscreen(); document.getElementById('fullscreen-btn').innerText = "⛶ Full"; }
+        });
+
+        document.getElementById('pause-btn').addEventListener('click', () => {
+            if (!isPlaying || snake.isDead || gameMode === 'client') return; // 접속자는 일시정지 불가
+            isPaused = !isPaused;
+            document.getElementById('pause-btn').innerText = isPaused ? "▶ Resume" : "⏸ Pause";
+            if (isPaused) bgmSound.pause(); else bgmSound.play().catch(()=>{});
+        });
+
+        // --- UI 전환 로직 ---
+        const radios = document.querySelectorAll('input[name="mode"]');
+        radios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                if(e.target.value === 'arena') {
+                    document.getElementById('start-btn').style.display = 'block';
+                    document.getElementById('multiplayer-ui').style.display = 'none';
+                } else {
+                    document.getElementById('start-btn').style.display = 'none';
+                    document.getElementById('multiplayer-ui').style.display = 'block';
+                }
+            });
+        });
+
+        // --- 멀티플레이 통신 설정 ---
+        function initPeer(pin, isHost) {
+            const peerId = 'snake201-' + pin;
+            /* Render에 서버를 구축했다면 아래처럼 옵션을 추가합니다.
+               peer = new Peer(peerId, { host: 'https://game-snakearena.onrender.com', port: 443, secure: true, path: '/' }); 
+			   
+               지금은 무료 공용 서버를 사용합니다.
+            */
+            peer = new Peer(peerId);
+
+            if (isHost) {
+                peer.on('open', id => { console.log('Host created:', id); });
+                peer.on('connection', conn => {
+                    p2pConnection = conn;
+                    setupHostConnection();
+                });
+            } else {
+                peer.on('open', () => {
+                    p2pConnection = peer.connect(peerId);
+                    setupClientConnection();
+                });
+                peer.on('error', err => {
+                    document.getElementById('join-status').innerText = "방을 찾을 수 없습니다!";
                 });
             }
         }
 
+        // 방장(Host) 버튼
+        document.getElementById('btn-create-room').addEventListener('click', () => {
+            const pin = Math.floor(1000 + Math.random() * 9000).toString();
+            document.getElementById('room-pin').innerText = pin;
+            document.getElementById('btn-create-room').style.display = 'none';
+            document.getElementById('btn-join-room').style.display = 'none';
+            document.getElementById('host-wait').style.display = 'block';
+            initPeer(pin, true);
+        });
+
+        // 접속(Join) 버튼
+        document.getElementById('btn-join-room').addEventListener('click', () => {
+            document.getElementById('btn-create-room').style.display = 'none';
+            document.getElementById('btn-join-room').style.display = 'none';
+            document.getElementById('join-wait').style.display = 'block';
+        });
+
+        document.getElementById('btn-connect-room').addEventListener('click', () => {
+            const pin = document.getElementById('join-input').value;
+            if(pin.length === 4) initPeer(pin, false);
+        });
+
+        // --- 호스트 연결 완료 시 ---
+        function setupHostConnection() {
+            p2pConnection.on('open', () => {
+                // 접속자 닉네임/색상 받기 대기
+                p2pConnection.on('data', data => {
+                    if (data.type === 'init') {
+                        startGame('host', data.nickname, data.color);
+                    } else if (data.type === 'input' && remoteSnake && !remoteSnake.isDead) {
+                        remoteSnake.angle = data.angle;
+                    } else if (data.type === 'continue' && remoteSnake) {
+                        remoteSnake = createSnake(WORLD_SIZE/2 + 200, WORLD_SIZE/2, remoteSnake.color, remoteSnake.name, true);
+                        remoteSnake.buffs.invincible = Date.now() + 3000;
+                        allSnakes.push(remoteSnake); // 재투입
+                    }
+                });
+            });
+        }
+
+        // --- 클라이언트 연결 완료 시 ---
+        function setupClientConnection() {
+            p2pConnection.on('open', () => {
+                gameMode = 'client';
+                const nickname = document.getElementById('nickname').value || 'Player';
+                const skinColor = document.getElementById('skin-color').value;
+                p2pConnection.send({ type: 'init', nickname: nickname, color: skinColor });
+
+                initGameUI();
+                
+                // 방장으로부터 화면 상태 수신
+                p2pConnection.on('data', data => {
+                    if (data.type === 'state') {
+                        // 수신받은 데이터로 화면 덮어쓰기
+                        foods = data.foods;
+                        items = data.items;
+                        bullets = data.bullets;
+                        particles = data.particles;
+                        
+                        // 뱀 분리 (내가 조종하는 뱀을 찾아 카메라를 고정해야 함)
+                        allSnakes = data.snakes;
+                        snake = allSnakes.find(s => s.name === nickname);
+                        
+                        updateLeaderboard(allSnakes);
+                        renderClient();
+                    } else if (data.type === 'sound') {
+                        playSound(data.soundType);
+                    }
+                });
+
+                // 클라이언트는 1초에 30번 마우스 각도 전송
+                setInterval(() => {
+                    if (isPlaying && !isPaused && snake && !snake.isDead) {
+                        p2pConnection.send({ type: 'input', angle: mouse.angle });
+                    }
+                }, 1000 / 30);
+            });
+        }
+
+        // --- 게임 시작 (싱글 & 호스트 공통) ---
+        document.getElementById('start-btn').addEventListener('click', () => startGame('arena'));
+
+        let allSnakes = []; // 호스트 연산용 전역 배열
+
+        function startGame(mode, remoteName = null, remoteColor = null) {
+            initAudio(); 
+            bgmSound.currentTime = 0; bgmSound.play().catch(()=>{});
+
+            gameMode = mode;
+            const nickname = document.getElementById('nickname').value || 'Player';
+            const skinColor = document.getElementById('skin-color').value;
+
+            foods = []; enemies = []; items = []; particles = []; bullets = []; allSnakes = [];
+            isPaused = false; 
+            clearInterval(itemSpawnInterval);
+
+            // 방장 뱀 생성
+            snake = createSnake(WORLD_SIZE / 2 - 100, WORLD_SIZE / 2, skinColor, nickname, true);
+            allSnakes.push(snake);
+
+            // 멀티 뱀 생성
+            if (gameMode === 'host' && remoteName) {
+                remoteSnake = createSnake(WORLD_SIZE / 2 + 100, WORLD_SIZE / 2, remoteColor, remoteName, true);
+                allSnakes.push(remoteSnake);
+            }
+
+            for (let i = 0; i < FOOD_COUNT; i++) spawnFood();
+            // 호스트일때도 봇을 넣어 난전을 만듭니다
+            for (let i = 0; i < ENEMY_COUNT; i++) {
+                let bot = spawnEnemy(4);
+                enemies.push(bot);
+                allSnakes.push(bot);
+            }
+
+            itemSpawnInterval = setInterval(spawnItem, 5000);
+            initGameUI();
+            
+            // 호스트는 게임 루프를 돌림
+            if (gameMode !== 'client') {
+                requestAnimationFrame(hostGameLoop);
+            }
+        }
+
+        function initGameUI() {
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('ui-layer').style.display = 'flex';
+            document.getElementById('controls-layer').style.display = 'flex'; 
+            isPlaying = true;
+            document.getElementById('score').innerText = "0";
+            
+            // 싱글(아레나)일 때만 컨티뉴 지원, 멀티는 방장/접속자 상태 꼬임 방지를 위해 일단 제외하거나 간소화
+            if(gameMode === 'arena') {
+                document.getElementById('continue-btn').style.display = 'block';
+            } else {
+                document.getElementById('continue-btn').style.display = 'block'; // 멀티도 컨티뉴 가능
+            }
+        }
+
+        // --- 이어하기 & 종료 ---
+        document.getElementById('continue-btn').addEventListener('click', () => {
+            initAudio(); bgmSound.play().catch(()=>{});
+            
+            if (gameMode === 'client') {
+                // 접속자는 방장에게 부활 신호 전송
+                p2pConnection.send({ type: 'continue' });
+            } else {
+                const nickname = document.getElementById('nickname').value || 'Player';
+                const skinColor = document.getElementById('skin-color').value;
+                snake = createSnake(lastPlayerDeathX, lastPlayerDeathY, skinColor, nickname, true);
+                snake.buffs.invincible = Date.now() + 3000;
+                allSnakes.push(snake); // 연산 배열에 재추가
+            }
+
+            document.getElementById('game-over-screen').style.display = 'none';
+            document.getElementById('ui-layer').style.display = 'flex';
+            document.getElementById('controls-layer').style.display = 'flex'; 
+            isPaused = false; document.getElementById('pause-btn').innerText = "⏸ Pause";
+        });
+
+        document.getElementById('quit-btn').addEventListener('click', () => {
+            window.location.reload(); // 복잡한 상태 리셋을 위해 새로고침이 가장 깔끔
+        });
+
+        function showGameOver(finalScore) {
+            bgmSound.pause(); 
+            document.getElementById('final-score').innerText = Math.floor(finalScore);
+            document.getElementById('ui-layer').style.display = 'none';
+            document.getElementById('controls-layer').style.display = 'none'; 
+            document.getElementById('game-over-screen').style.display = 'flex';
+        }
+
+        // --- 팩토리 함수들 ---
         function createSnake(x, y, color, name, isPlayer = false, baseSpeed = 4) {
             return {
-                x: x, y: y, radius: 15,
-                baseSpeed: baseSpeed, speed: baseSpeed,
-                history: [], tailLength: 10,
-                color: color, isPlayer: isPlayer, name: name,
-                angle: Math.random() * Math.PI * 2,
-                score: 0, turnDirection: null,
-                isDead: false,
+                x: x, y: y, radius: 15, baseSpeed: baseSpeed, speed: baseSpeed,
+                history: [], tailLength: 10, color: color, isPlayer: isPlayer, name: name,
+                angle: Math.random() * Math.PI * 2, score: 0, turnDirection: null, isDead: false,
                 buffs: { magnet: 0, speed: 0, vision: 0, invincible: 0, gun: 0, spike: 0 },
                 lastShootTime: 0
             };
         }
-
         function spawnFood(x, y, isBig = false, customRadius = null, isCorpse = false) {
             let r = isBig ? (Math.random() * 5 + 10) : (Math.random() * 4 + 4);
             if (customRadius) r = customRadius;
-            foods.push({
-                x: x || Math.random() * WORLD_SIZE, y: y || Math.random() * WORLD_SIZE,
-                radius: r, color: `hsl(${Math.random() * 360}, 100%, 70%)`,
-                isBig: isBig, customRadius: customRadius, isCorpse: isCorpse
-            });
+            foods.push({ x: x || Math.random() * WORLD_SIZE, y: y || Math.random() * WORLD_SIZE, radius: r, color: `hsl(${Math.random() * 360}, 100%, 70%)`, isBig: isBig, customRadius: customRadius, isCorpse: isCorpse });
         }
-
         function spawnEnemy(speed = 4) {
-            const randomName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
-            enemies.push(createSnake(Math.random() * WORLD_SIZE, Math.random() * WORLD_SIZE, `hsl(${Math.random() * 360}, 80%, 60%)`, randomName, false, speed));
+            const name = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
+            return createSnake(Math.random() * WORLD_SIZE, Math.random() * WORLD_SIZE, `hsl(${Math.random() * 360}, 80%, 60%)`, name, false, speed);
         }
-
         function spawnItem() {
             if (items.length > 5 || isPaused) return; 
             const types = ['magnet', 'speed', 'vision', 'invincible', 'gun', 'spike']; 
-            items.push({
-                type: types[Math.floor(Math.random() * types.length)],
-                x: Math.random() * WORLD_SIZE, y: Math.random() * WORLD_SIZE, 
-                radius: 36 
-            });
+            items.push({ type: types[Math.floor(Math.random() * types.length)], x: Math.random() * WORLD_SIZE, y: Math.random() * WORLD_SIZE, radius: 36 });
         }
-
+        function createExplosion(x, y, baseColor, count) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2; const speed = Math.random() * 8 + 2; 
+                particles.push({ x: x, y: y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, radius: Math.random() * 6 + 3, color: Math.random() > 0.5 ? baseColor : '#ffffff', life: 1.0, decay: Math.random() * 0.03 + 0.02 });
+            }
+        }
         function checkBodyCollision(x, y, radius, bodySnake, now) {
             let hitRadius = bodySnake.radius * 0.8;
-            if (now && now < bodySnake.buffs.spike) {
-                hitRadius = bodySnake.radius * 4; 
-            }
-
+            if (now && now < bodySnake.buffs.spike) hitRadius = bodySnake.radius * 4; 
             for (let i = 0; i < Math.floor(bodySnake.tailLength); i++) {
                 const historyIndex = i * 4;
                 if (historyIndex < bodySnake.history.length) {
@@ -476,361 +487,25 @@
             }
             return false;
         }
-
-        function isPositionDangerous(x, y, radius, excludeEnemyIndex, now) {
-            if (x < radius || x > WORLD_SIZE - radius || y < radius || y > WORLD_SIZE - radius) return true;
-            
-            if (!snake.isDead && checkBodyCollision(x, y, radius, snake, now)) return true;
-            if (!snake.isDead && now < snake.buffs.spike && Math.hypot(x - snake.x, y - snake.y) < radius + snake.radius * 4) return true;
-
-            for (let j = 0; j < enemies.length; j++) {
-                if (excludeEnemyIndex !== j) {
-                    if (checkBodyCollision(x, y, radius, enemies[j], now)) return true;
-                    if (now < enemies[j].buffs.spike && Math.hypot(x - enemies[j].x, y - enemies[j].y) < radius + enemies[j].radius * 4) return true;
-                }
-            }
-            return false;
+        function broadcastSound(type) {
+            playSound(type);
+            if (gameMode === 'host' && p2pConnection) p2pConnection.send({ type: 'sound', soundType: type });
         }
-
-        function checkEnemyCollisions(s, currentIndex, now) {
-            for (let j = 0; j < enemies.length; j++) {
-                if (currentIndex !== j) {
-                    if (checkBodyCollision(s.x, s.y, s.radius, enemies[j], now)) return true;
-                    if (now < enemies[j].buffs.spike && Math.hypot(s.x - enemies[j].x, s.y - enemies[j].y) < s.radius + enemies[j].radius * 4) return true;
-                }
-            }
-            if (currentIndex !== -1 && !snake.isDead) {
-                if (checkBodyCollision(s.x, s.y, s.radius, snake, now)) return true;
-                if (now < snake.buffs.spike && Math.hypot(s.x - snake.x, s.y - snake.y) < s.radius + snake.radius * 4) return true;
-            }
-            return false;
-        }
-
-        function updateLeaderboard() {
-            const allSnakes = [...enemies];
-            if (!snake.isDead) allSnakes.push(snake);
-
-            allSnakes.sort((a, b) => b.score - a.score);
-            const isMobileEnv = window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-            const maxDisplayCount = isMobileEnv ? 4 : 10;
-            
-            let html = '';
-            for (let i = 0; i < Math.min(maxDisplayCount, allSnakes.length); i++) {
-                const s = allSnakes[i];
-                const isMeClass = s.isPlayer ? 'class="my-rank"' : '';
-                html += `<li ${isMeClass}>${s.name} <small>(${Math.floor(s.score)})</small></li>`;
-            }
-            leaderboardList.innerHTML = html;
-        }
-
-        function update() {
-            if (!isPlaying || isPaused) return; 
-
-            const now = Date.now();
-            let allSnakes = [...enemies];
-            if (!snake.isDead) allSnakes.push(snake);
-
-            if (!snake.isDead) {
-                let buffText = "";
-                if (now < snake.buffs.magnet) buffText += `<div class="buff-text buff-magnet">🧲 Magnet: ${Math.ceil((snake.buffs.magnet - now)/1000)}s</div>`;
-                if (now < snake.buffs.speed) buffText += `<div class="buff-text buff-speed">UP Speed: ${Math.ceil((snake.buffs.speed - now)/1000)}s</div>`;
-                if (now < snake.buffs.vision) buffText += `<div class="buff-text buff-vision">🔭 Vision: ${Math.ceil((snake.buffs.vision - now)/1000)}s</div>`;
-                if (now < snake.buffs.invincible) buffText += `<div class="buff-text buff-invincible">⭐ Invincible: ${Math.ceil((snake.buffs.invincible - now)/1000)}s</div>`;
-                if (now < snake.buffs.gun) buffText += `<div class="buff-text buff-gun">🔫 Gun: ${Math.ceil((snake.buffs.gun - now)/1000)}s</div>`;
-                if (now < snake.buffs.spike) buffText += `<div class="buff-text buff-spike">✹ Spikes: ${Math.ceil((snake.buffs.spike - now)/1000)}s</div>`;
-                buffStatusElement.innerHTML = buffText;
-            }
-
-            /* 플레이어 업데이트 */
-            if (!snake.isDead) {
-                const isInvincible = now < snake.buffs.invincible;
-                snake.speed = (now < snake.buffs.speed) ? snake.baseSpeed * 1.3 : snake.baseSpeed;
-
-                const dx = mouse.x - (canvas.width / 2);
-                const dy = mouse.y - (canvas.height / 2);
-                snake.angle = Math.atan2(dy, dx);
-                
-                let playerHitWall = moveSnake(snake, isInvincible);
-
-                if (isInvincible) {
-                    for (let i = enemies.length - 1; i >= 0; i--) {
-                        let e = enemies[i];
-                        if (!(now < e.buffs.invincible)) {
-                            if (checkBodyCollision(snake.x, snake.y, snake.radius, e, now) || Math.hypot(snake.x - e.x, snake.y - e.y) < snake.radius + e.radius) {
-                                die(e, i);
-                            }
-                        }
-                    }
-                } else {
-                    if (playerHitWall || checkEnemyCollisions(snake, -1, now)) {
-                        die(snake, -1); 
-                        snake.isDead = true; 
-                        setTimeout(gameOver, 2000); 
-                    }
-                }
-
-                if (now < snake.buffs.gun && now - snake.lastShootTime > 300) {
-                    bullets.push({
-                        x: snake.x + Math.cos(snake.angle) * (snake.radius + 5),
-                        y: snake.y + Math.sin(snake.angle) * (snake.radius + 5),
-                        vx: Math.cos(snake.angle) * 15, vy: Math.sin(snake.angle) * 15,
-                        radius: 6, color: '#ff3300', owner: snake
-                    });
-                    snake.lastShootTime = now;
-                    playSound('shoot'); 
-                }
-            }
-
-            /* 적 AI 업데이트 */
-            for (let i = enemies.length - 1; i >= 0; i--) {
-                let enemy = enemies[i];
-                const isInvincible = now < enemy.buffs.invincible;
-                enemy.speed = (now < enemy.buffs.speed) ? enemy.baseSpeed * 1.3 : enemy.baseSpeed;
-
-                if (!isInvincible) {
-                    let lookAhead = enemy.radius * 5; 
-                    let futureX = enemy.x + Math.cos(enemy.angle) * lookAhead;
-                    let futureY = enemy.y + Math.sin(enemy.angle) * lookAhead;
-
-                    if (isPositionDangerous(futureX, futureY, enemy.radius, i, now)) {
-                        if (!enemy.turnDirection) enemy.turnDirection = Math.random() < 0.5 ? 1 : -1;
-                        enemy.angle += enemy.turnDirection * 0.3; 
-                    } else {
-                        enemy.turnDirection = null; 
-                        let target = null; let minDist = 400; 
-                        const interactables = [...foods, ...items];
-                        for (let obj of interactables) {
-                            let d = Math.hypot(enemy.x - obj.x, enemy.y - obj.y);
-                            if (d < minDist) { minDist = d; target = obj; }
-                        }
-
-                        if (target) {
-                            let angleToTarget = Math.atan2(target.y - enemy.y, target.x - enemy.x);
-                            let angleDiff = angleToTarget - enemy.angle;
-                            angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-                            enemy.angle += Math.max(-0.06, Math.min(0.06, angleDiff)); 
-                        } else {
-                            enemy.angle += (Math.random() - 0.5) * 0.1;
-                        }
-                    }
-                } else {
-                    let target = null; let minDist = 800; 
-                    const interactables = [...foods, ...items];
-                    for (let obj of interactables) {
-                        let d = Math.hypot(enemy.x - obj.x, enemy.y - obj.y);
-                        if (d < minDist) { minDist = d; target = obj; }
-                    }
-                    if (target) {
-                        let angleToTarget = Math.atan2(target.y - enemy.y, target.x - enemy.x);
-                        let angleDiff = angleToTarget - enemy.angle;
-                        angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-                        enemy.angle += Math.max(-0.08, Math.min(0.08, angleDiff)); 
-                    }
-                }
-
-                let enemyHitWall = moveSnake(enemy, isInvincible);
-
-                if (isInvincible) {
-                    if (!snake.isDead && !(now < snake.buffs.invincible)) {
-                        if (checkBodyCollision(enemy.x, enemy.y, enemy.radius, snake, now) || Math.hypot(enemy.x - snake.x, enemy.y - snake.y) < enemy.radius + snake.radius) {
-                            die(snake, -1);
-                            snake.isDead = true;
-                            setTimeout(gameOver, 2000);
-                        }
-                    }
-                    for (let j = enemies.length - 1; j >= 0; j--) {
-                        if (i === j) continue;
-                        let e2 = enemies[j];
-                        if (!(now < e2.buffs.invincible)) {
-                            if (checkBodyCollision(enemy.x, enemy.y, enemy.radius, e2, now) || Math.hypot(enemy.x - e2.x, enemy.y - e2.y) < enemy.radius + e2.radius) {
-                                die(e2, j);
-                                if (j < i) i--; 
-                            }
-                        }
-                    }
-                } else {
-                    if (enemyHitWall || (!snake.isDead && checkBodyCollision(enemy.x, enemy.y, enemy.radius, snake, now)) || checkEnemyCollisions(enemy, i, now)) {
-                        die(enemy, i);
-                    }
-                }
-
-                if (now < enemy.buffs.gun && now - enemy.lastShootTime > 300) {
-                    bullets.push({
-                        x: enemy.x + Math.cos(enemy.angle) * (enemy.radius + 5),
-                        y: enemy.y + Math.sin(enemy.angle) * (enemy.radius + 5),
-                        vx: Math.cos(enemy.angle) * 15, vy: Math.sin(enemy.angle) * 15,
-                        radius: 6, color: '#ff3300', owner: enemy
-                    });
-                    enemy.lastShootTime = now;
-                }
-            }
-
-            /* 가시 자동 처형 판정 */
-            for (let i = 0; i < allSnakes.length; i++) {
-                let s1 = allSnakes[i];
-                if (now < s1.buffs.spike) {
-                    for (let j = 0; j < allSnakes.length; j++) {
-                        if (i === j) continue;
-                        let s2 = allSnakes[j];
-                        if (s2.isDead) continue;
-                        if (now < s2.buffs.invincible) continue; 
-                        
-                        if (checkBodyCollision(s2.x, s2.y, s2.radius, s1, now) || Math.hypot(s2.x - s1.x, s2.y - s1.y) < s2.radius + s1.radius * 4) {
-                            let idx2 = s2.isPlayer ? -1 : enemies.indexOf(s2);
-                            if ((s2.isPlayer && !s2.isDead) || (!s2.isPlayer && idx2 > -1)) {
-                                die(s2, idx2);
-                                if (s2.isPlayer) {
-                                    s2.isDead = true;
-                                    setTimeout(gameOver, 2000);
-                                } else {
-                                    s2.isDead = true; 
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            /* 총알 충돌 확인 */
-            for (let i = bullets.length - 1; i >= 0; i--) {
-                let b = bullets[i];
-                b.x += b.vx; b.y += b.vy;
-
-                if (b.x < 0 || b.x > WORLD_SIZE || b.y < 0 || b.y > WORLD_SIZE) {
-                    bullets.splice(i, 1); continue;
-                }
-
-                let hit = false;
-                for (let j = 0; j < allSnakes.length; j++) {
-                    let tgt = allSnakes[j];
-                    if (b.owner === tgt || tgt.isDead) continue;
-
-                    if (Math.hypot(b.x - tgt.x, b.y - tgt.y) < b.radius + tgt.radius || checkBodyCollision(b.x, b.y, b.radius, tgt, now)) {
-                        if (!(now < tgt.buffs.invincible)) {
-                            let idx = tgt.isPlayer ? -1 : enemies.indexOf(tgt);
-                            die(tgt, idx);
-                            if (tgt.isPlayer) {
-                                tgt.isDead = true;
-                                setTimeout(gameOver, 2000);
-                            } else {
-                                tgt.isDead = true;
-                            }
-                        }
-                        createExplosion(b.x, b.y, '#ff3300', 10); 
-                        hit = true;
-                        break;
-                    }
-                }
-                if (hit) bullets.splice(i, 1);
-            }
-
-            /* 아이템 획득 */
-            for (let i = items.length - 1; i >= 0; i--) {
-                const item = items[i];
-                let pickedUp = false;
-                for (let s of allSnakes) {
-                    if (!s.isDead && Math.hypot(s.x - item.x, s.y - item.y) < s.radius + item.radius) {
-                        s.buffs[item.type] = now + 10000;
-                        pickedUp = true;
-                        if (s.isPlayer) playSound('item'); 
-                        break;
-                    }
-                }
-                if (pickedUp) items.splice(i, 1);
-            }
-
-            /* 자석 및 먹이 판정 */
-            for (let i = foods.length - 1; i >= 0; i--) {
-                let f = foods[i];
-                
-                for (let s of allSnakes) {
-                    if (!s.isDead && now < s.buffs.magnet) {
-                        const distToS = Math.hypot(s.x - f.x, s.y - f.y);
-                        if (distToS < 250) {
-                            const angleToS = Math.atan2(s.y - f.y, s.x - f.x);
-                            f.x += Math.cos(angleToS) * 8;
-                            f.y += Math.sin(angleToS) * 8;
-                        }
-                    }
-                }
-
-                let eaten = false;
-                for (let s of allSnakes) {
-                    if (!s.isDead && Math.hypot(s.x - f.x, s.y - f.y) < s.radius + f.radius) {
-                        eatFood(s, f, i);
-                        eaten = true;
-                        break;
-                    }
-                }
-                if (eaten) continue;
-            }
-
-            for (let i = particles.length - 1; i >= 0; i--) {
-                let p = particles[i];
-                p.x += p.vx; p.y += p.vy;
-                p.life -= p.decay; p.radius *= 0.95; 
-                if (p.life <= 0 || p.radius < 0.5) particles.splice(i, 1);
-            }
-
-            updateLeaderboard();
-        }
-
-        function moveSnake(s, isInvincible) {
-            s.x += Math.cos(s.angle) * s.speed;
-            s.y += Math.sin(s.angle) * s.speed;
-
-            let hitWall = false;
-            if (s.x < s.radius || s.x > WORLD_SIZE - s.radius || s.y < s.radius || s.y > WORLD_SIZE - s.radius) { 
-                hitWall = true; 
-                if (isInvincible && !s.isPlayer) s.angle += Math.PI; 
-            }
-
-            s.x = Math.max(s.radius, Math.min(WORLD_SIZE - s.radius, s.x));
-            s.y = Math.max(s.radius, Math.min(WORLD_SIZE - s.radius, s.y));
-
-            s.history.unshift({ x: s.x, y: s.y });
-            if (s.history.length > Math.floor(s.tailLength) * 4 + 10) s.history.pop();
-            
-            return hitWall && !isInvincible; 
-        }
-
-        function eatFood(s, f, index) {
-            foods.splice(index, 1);
-            let growthRate = 0.15; let sizeIncrease = 0.05; let scoreAdd = 10;
-            
-            if (f.isBig) {
-                if (f.customRadius && f.customRadius > 10) {
-                    growthRate = f.customRadius * 0.045; sizeIncrease = f.customRadius * 0.02; scoreAdd = Math.floor(f.customRadius * 5);
-                } else {
-                    growthRate = 0.6; sizeIncrease = 0.2; scoreAdd = 50;
-                }
-            }
-
-            s.tailLength += growthRate; s.radius += sizeIncrease;
-            if (s.radius > 60) s.radius = 60;
-
-            if (s.isPlayer) {
-                s.score += scoreAdd;
-                scoreElement.innerText = Math.floor(s.score);
-            } else {
-                s.score += scoreAdd; 
-            }
-
-            if (foods.length < FOOD_COUNT) spawnFood(); 
-        }
-
-        function die(deadSnake, index) {
+        function die(deadSnake) {
             if (deadSnake.isPlayer) {
-                playSound('player_death');
-                /* 부활 위치 저장 (벽에 끼이지 않도록 여백 확보) */
-                lastPlayerDeathX = Math.max(100, Math.min(WORLD_SIZE - 100, deadSnake.x));
-                lastPlayerDeathY = Math.max(100, Math.min(WORLD_SIZE - 100, deadSnake.y));
+                broadcastSound('player_death');
+                if(deadSnake === snake) {
+                    lastPlayerDeathX = Math.max(100, Math.min(WORLD_SIZE - 100, deadSnake.x));
+                    lastPlayerDeathY = Math.max(100, Math.min(WORLD_SIZE - 100, deadSnake.y));
+                    showGameOver(snake.score);
+                } else if (deadSnake === remoteSnake) {
+                    // 상대방 뱀 죽음 (상대방 기기에서 팝업이 뜨도록 내버려둠)
+                }
             } else {
-                playSound('enemy_death');
+                broadcastSound('enemy_death');
             }
              
             createExplosion(deadSnake.x, deadSnake.y, deadSnake.color, 40);
-
             for (let i = 0; i < Math.floor(deadSnake.tailLength); i += 2) {
                 const hIndex = i * 4;
                 if (hIndex < deadSnake.history.length) {
@@ -840,257 +515,352 @@
                 }
             }
             
-            if (index >= 0) {
-                enemies.splice(index, 1);
-                const diff = document.getElementById('difficulty').value;
-                setTimeout(() => spawnEnemy(diff === 'hard' ? 4.8 : (diff === 'easy' ? 3.5 : 4)), 2000); 
+            deadSnake.isDead = true;
+            // 배열에서 제거
+            let idx = allSnakes.indexOf(deadSnake);
+            if(idx > -1) allSnakes.splice(idx, 1);
+            
+            if (!deadSnake.isPlayer) {
+                let eIdx = enemies.indexOf(deadSnake);
+                if(eIdx > -1) enemies.splice(eIdx, 1);
+                setTimeout(() => {
+                    let bot = spawnEnemy(4);
+                    enemies.push(bot); allSnakes.push(bot);
+                }, 2000); 
             }
         }
 
-        function draw() {
+        // --- 방장 메인 루프 (업데이트 연산) ---
+        function updateHostLogic() {
+            if (!isPlaying || isPaused) return; 
+            const now = Date.now();
+
+            /* 내 뱀 각도 적용 */
+            if (!snake.isDead) snake.angle = mouse.angle;
+            // remoteSnake 각도는 웹소켓으로 알아서 갱신됨
+
+            // --- 모든 뱀 연산 (플레이어 + 봇) ---
+            for (let i = allSnakes.length - 1; i >= 0; i--) {
+                let s = allSnakes[i];
+                if (s.isDead) continue;
+
+                const isInvincible = now < s.buffs.invincible;
+                s.speed = (now < s.buffs.speed) ? s.baseSpeed * 1.3 : s.baseSpeed;
+
+                // 봇 AI (방향 결정)
+                if (!s.isPlayer) {
+                    if (!isInvincible) {
+                        let lookAhead = s.radius * 5; 
+                        let futureX = s.x + Math.cos(s.angle) * lookAhead;
+                        let futureY = s.y + Math.sin(s.angle) * lookAhead;
+                        let danger = false;
+                        if (futureX < s.radius || futureX > WORLD_SIZE - s.radius || futureY < s.radius || futureY > WORLD_SIZE - s.radius) danger = true;
+                        if (!danger) {
+                            for(let tgt of allSnakes) {
+                                if(s !== tgt && !tgt.isDead && checkBodyCollision(futureX, futureY, s.radius, tgt, now)) { danger=true; break;}
+                            }
+                        }
+                        if (danger) {
+                            if (!s.turnDirection) s.turnDirection = Math.random() < 0.5 ? 1 : -1;
+                            s.angle += s.turnDirection * 0.3; 
+                        } else {
+                            s.turnDirection = null; 
+                            let target = null; let minDist = 400; 
+                            for (let obj of [...foods, ...items]) {
+                                let d = Math.hypot(s.x - obj.x, s.y - obj.y);
+                                if (d < minDist) { minDist = d; target = obj; }
+                            }
+                            if (target) {
+                                let aDiff = Math.atan2(target.y - s.y, target.x - s.x) - s.angle;
+                                aDiff = Math.atan2(Math.sin(aDiff), Math.cos(aDiff));
+                                s.angle += Math.max(-0.06, Math.min(0.06, aDiff)); 
+                            } else { s.angle += (Math.random() - 0.5) * 0.1; }
+                        }
+                    }
+                }
+
+                // 이동 및 벽 충돌
+                s.x += Math.cos(s.angle) * s.speed; s.y += Math.sin(s.angle) * s.speed;
+                let hitWall = false;
+                if (s.x < s.radius || s.x > WORLD_SIZE - s.radius || s.y < s.radius || s.y > WORLD_SIZE - s.radius) { 
+                    hitWall = true; if (isInvincible && !s.isPlayer) s.angle += Math.PI; 
+                }
+                s.x = Math.max(s.radius, Math.min(WORLD_SIZE - s.radius, s.x));
+                s.y = Math.max(s.radius, Math.min(WORLD_SIZE - s.radius, s.y));
+                s.history.unshift({ x: s.x, y: s.y });
+                if (s.history.length > Math.floor(s.tailLength) * 4 + 10) s.history.pop();
+
+                // 뱀끼리 충돌 판정
+                let killed = false;
+                if (isInvincible) {
+                    for (let tgt of allSnakes) {
+                        if (s !== tgt && !tgt.isDead && !(now < tgt.buffs.invincible)) {
+                            if (checkBodyCollision(s.x, s.y, s.radius, tgt, now) || Math.hypot(s.x - tgt.x, s.y - tgt.y) < s.radius + tgt.radius) {
+                                die(tgt);
+                            }
+                        }
+                    }
+                } else if (hitWall) {
+                    die(s); killed = true;
+                } else {
+                    for (let tgt of allSnakes) {
+                        if (s !== tgt && !tgt.isDead) {
+                            if (checkBodyCollision(s.x, s.y, s.radius, tgt, now) || (now < tgt.buffs.spike && Math.hypot(s.x - tgt.x, s.y - tgt.y) < s.radius + tgt.radius * 4)) {
+                                die(s); killed = true; break;
+                            }
+                        }
+                    }
+                }
+
+                // 총알 발사
+                if (!killed && now < s.buffs.gun && now - s.lastShootTime > 300) {
+                    bullets.push({ x: s.x + Math.cos(s.angle)*(s.radius+5), y: s.y + Math.sin(s.angle)*(s.radius+5), vx: Math.cos(s.angle)*15, vy: Math.sin(s.angle)*15, radius: 6, color: '#ff3300', owner: s });
+                    s.lastShootTime = now;
+                    if(s.isPlayer) broadcastSound('shoot');
+                }
+                
+                // 가시 판정
+                if (!killed && now < s.buffs.spike) {
+                    for (let tgt of allSnakes) {
+                        if (s !== tgt && !tgt.isDead && !(now < tgt.buffs.invincible)) {
+                            if (checkBodyCollision(tgt.x, tgt.y, tgt.radius, s, now) || Math.hypot(tgt.x - s.x, tgt.y - s.y) < tgt.radius + s.radius * 4) {
+                                die(tgt);
+                            }
+                        }
+                    }
+                }
+            }
+
+            /* 총알 충돌 */
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                let b = bullets[i];
+                b.x += b.vx; b.y += b.vy;
+                if (b.x < 0 || b.x > WORLD_SIZE || b.y < 0 || b.y > WORLD_SIZE) { bullets.splice(i, 1); continue; }
+
+                let hit = false;
+                for (let tgt of allSnakes) {
+                    if (b.owner === tgt || tgt.isDead) continue;
+                    if (Math.hypot(b.x - tgt.x, b.y - tgt.y) < b.radius + tgt.radius || checkBodyCollision(b.x, b.y, b.radius, tgt, now)) {
+                        if (!(now < tgt.buffs.invincible)) die(tgt);
+                        createExplosion(b.x, b.y, '#ff3300', 10); 
+                        hit = true; break;
+                    }
+                }
+                if (hit) bullets.splice(i, 1);
+            }
+
+            /* 아이템 획득 */
+            for (let i = items.length - 1; i >= 0; i--) {
+                let pickedUp = false;
+                for (let s of allSnakes) {
+                    if (!s.isDead && Math.hypot(s.x - items[i].x, s.y - items[i].y) < s.radius + items[i].radius) {
+                        s.buffs[items[i].type] = now + 10000; pickedUp = true;
+                        if (s.isPlayer) broadcastSound('item'); 
+                        break;
+                    }
+                }
+                if (pickedUp) items.splice(i, 1);
+            }
+
+            /* 먹이 자석 및 획득 */
+            for (let i = foods.length - 1; i >= 0; i--) {
+                let f = foods[i];
+                for (let s of allSnakes) {
+                    if (!s.isDead && now < s.buffs.magnet && Math.hypot(s.x - f.x, s.y - f.y) < 250) {
+                        let a = Math.atan2(s.y - f.y, s.x - f.x); f.x += Math.cos(a) * 8; f.y += Math.sin(a) * 8;
+                    }
+                }
+                let eaten = false;
+                for (let s of allSnakes) {
+                    if (!s.isDead && Math.hypot(s.x - f.x, s.y - f.y) < s.radius + f.radius) {
+                        foods.splice(i, 1);
+                        let rate = f.isBig ? (f.customRadius ? f.customRadius*0.045 : 0.6) : 0.15;
+                        let inc = f.isBig ? (f.customRadius ? f.customRadius*0.02 : 0.2) : 0.05;
+                        let scoreAdd = f.isBig ? (f.customRadius ? Math.floor(f.customRadius*5) : 50) : 10;
+                        s.tailLength += rate; s.radius = Math.min(60, s.radius + inc); s.score += scoreAdd;
+                        if(s === snake) document.getElementById('score').innerText = Math.floor(s.score);
+                        if (foods.length < FOOD_COUNT) spawnFood(); 
+                        eaten = true; break;
+                    }
+                }
+                if (eaten) continue;
+            }
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx; p.y += p.vy; p.life -= p.decay; p.radius *= 0.95; 
+                if (p.life <= 0 || p.radius < 0.5) particles.splice(i, 1);
+            }
+
+            updateLeaderboard();
+
+            // --- 접속자(Client)에게 상태 전송 ---
+            if (gameMode === 'host' && p2pConnection) {
+                // 부하를 줄이기 위해 필수 데이터만 추출 (Serialization)
+                const stateData = {
+                    type: 'state',
+                    snakes: allSnakes.map(s => ({
+                        x: s.x, y: s.y, radius: s.radius, color: s.color, name: s.name, angle: s.angle,
+                        tailLength: s.tailLength, history: s.history, isDead: s.isDead, score: s.score, buffs: s.buffs, isPlayer: s.isPlayer
+                    })),
+                    foods: foods, items: items, bullets: bullets, particles: particles
+                };
+                p2pConnection.send(stateData);
+            }
+        }
+
+        // --- 클라이언트 & 호스트 렌더링 ---
+        function renderClient() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
             if (!isPlaying) return;
 
             const time = Date.now();
             let targetZoom = 1.0;
-            if (snake && !snake.isDead && time < snake.buffs.vision) {
-                targetZoom = 1 / 1.5;
-            }
             
-            if (!isPaused && isPlaying) {
-                currentZoom += (targetZoom - currentZoom) * 0.05;
+            // 내 화면 UI 표시
+            if (snake && !snake.isDead) {
+                if(time < snake.buffs.vision) targetZoom = 1 / 1.5;
+                
+                let buffText = "";
+                if (time < snake.buffs.magnet) buffText += `<div class="buff-text buff-magnet">🧲 Magnet: ${Math.ceil((snake.buffs.magnet - time)/1000)}s</div>`;
+                if (time < snake.buffs.speed) buffText += `<div class="buff-text buff-speed">UP Speed: ${Math.ceil((snake.buffs.speed - time)/1000)}s</div>`;
+                if (time < snake.buffs.vision) buffText += `<div class="buff-text buff-vision">🔭 Vision: ${Math.ceil((snake.buffs.vision - time)/1000)}s</div>`;
+                if (time < snake.buffs.invincible) buffText += `<div class="buff-text buff-invincible">⭐ Invincible: ${Math.ceil((snake.buffs.invincible - time)/1000)}s</div>`;
+                if (time < snake.buffs.gun) buffText += `<div class="buff-text buff-gun">🔫 Gun: ${Math.ceil((snake.buffs.gun - time)/1000)}s</div>`;
+                if (time < snake.buffs.spike) buffText += `<div class="buff-text buff-spike">✹ Spikes: ${Math.ceil((snake.buffs.spike - time)/1000)}s</div>`;
+                buffStatusElement.innerHTML = buffText;
+                
+                // 점수 업데이트 (클라이언트 용)
+                if(gameMode === 'client') document.getElementById('score').innerText = Math.floor(snake.score);
+                
+                // 클라이언트 사망 처리 팝업 트리거
+                if(gameMode === 'client' && document.getElementById('game-over-screen').style.display !== 'flex') {
+                    // 방장이 보낸 상태에서 내가 죽어있다면?
+                    // (이 코드는 render 루프 안이므로 중복 호출 방지를 위해 체크)
+                }
+            } else if (snake && snake.isDead && document.getElementById('game-over-screen').style.display !== 'flex') {
+                 showGameOver(snake.score);
             }
+
+            if (!isPaused && isPlaying) currentZoom += (targetZoom - currentZoom) * 0.05;
 
             ctx.save();
             ctx.translate(canvas.width / 2, canvas.height / 2);
             ctx.scale(currentZoom, currentZoom);
             
-            /* 카메라 시점 고정: 죽었을 때는 죽은 위치에 시점 고정 */
             if(snake) {
-                if (snake.isDead) {
-                    ctx.translate(-lastPlayerDeathX, -lastPlayerDeathY);
-                } else {
-                    ctx.translate(-snake.x, -snake.y);
-                }
+                if (snake.isDead) ctx.translate(-lastPlayerDeathX, -lastPlayerDeathY);
+                else ctx.translate(-snake.x, -snake.y);
             }
 
+            // 그리드 및 테두리
             ctx.strokeStyle = '#2a2a4e'; ctx.lineWidth = 2;
             const gridSize = 100;
-            
             if(snake) {
-                const visibleWidth = canvas.width / currentZoom;
-                const visibleHeight = canvas.height / currentZoom;
-                let viewLeft, viewTop;
-
-                if (snake.isDead) {
-                    viewLeft = lastPlayerDeathX - visibleWidth / 2;
-                    viewTop = lastPlayerDeathY - visibleHeight / 2;
-                } else {
-                    viewLeft = snake.x - visibleWidth / 2;
-                    viewTop = snake.y - visibleHeight / 2;
-                }
-
-                const startX = Math.floor(viewLeft / gridSize) * gridSize;
-                const startY = Math.floor(viewTop / gridSize) * gridSize;
-                
-                for (let x = startX - gridSize; x < viewLeft + visibleWidth + gridSize; x += gridSize) { 
-                    ctx.beginPath(); ctx.moveTo(x, viewTop - gridSize); ctx.lineTo(x, viewTop + visibleHeight + gridSize); ctx.stroke(); 
-                }
-                for (let y = startY - gridSize; y < viewTop + visibleHeight + gridSize; y += gridSize) { 
-                    ctx.beginPath(); ctx.moveTo(viewLeft - gridSize, y); ctx.lineTo(viewLeft + visibleWidth + gridSize, y); ctx.stroke(); 
-                }
+                const visW = canvas.width / currentZoom; const visH = canvas.height / currentZoom;
+                let vL = (snake.isDead ? lastPlayerDeathX : snake.x) - visW / 2;
+                let vT = (snake.isDead ? lastPlayerDeathY : snake.y) - visH / 2;
+                for (let x = Math.floor(vL/gridSize)*gridSize - gridSize; x < vL + visW + gridSize; x += gridSize) { ctx.beginPath(); ctx.moveTo(x, vT - gridSize); ctx.lineTo(x, vT + visH + gridSize); ctx.stroke(); }
+                for (let y = Math.floor(vT/gridSize)*gridSize - gridSize; y < vT + visH + gridSize; y += gridSize) { ctx.beginPath(); ctx.moveTo(vL - gridSize, y); ctx.lineTo(vL + visW + gridSize, y); ctx.stroke(); }
             }
-            
             ctx.strokeStyle = '#ff3333'; ctx.lineWidth = 15; ctx.strokeRect(0, 0, WORLD_SIZE, WORLD_SIZE);
 
-            particles.forEach(p => {
-                ctx.globalAlpha = Math.max(0, p.life); 
-                ctx.beginPath(); 
-                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-                ctx.fillStyle = p.color; 
-                ctx.shadowBlur = 10; 
-                ctx.shadowColor = p.color;
-                ctx.fill(); 
-                ctx.shadowBlur = 0;
-                ctx.globalAlpha = 1.0; 
-            });
-
-            bullets.forEach(b => {
-                ctx.beginPath();
-                ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
-                ctx.fillStyle = b.color;
-                ctx.shadowBlur = 15;
-                ctx.shadowColor = '#ffff00';
-                ctx.fill();
-                ctx.shadowBlur = 0;
-            });
-
+            // 요소 그리기
+            particles.forEach(p => { ctx.globalAlpha = Math.max(0, p.life); ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2); ctx.fillStyle = p.color; ctx.shadowBlur = 10; ctx.shadowColor = p.color; ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1.0; });
+            bullets.forEach(b => { ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.fillStyle = b.color; ctx.shadowBlur = 15; ctx.shadowColor = '#ffff00'; ctx.fill(); ctx.shadowBlur = 0; });
             items.forEach(item => {
-                const sparkle = Math.abs(Math.sin(time / 200)); 
-                ctx.beginPath(); ctx.arc(item.x, item.y, item.radius, 0, Math.PI * 2);
-                if (item.type === 'magnet') ctx.fillStyle = '#3498db';
-                else if (item.type === 'speed') ctx.fillStyle = '#f1c40f';
-                else if (item.type === 'vision') ctx.fillStyle = '#9b59b6';
-                else if (item.type === 'invincible') ctx.fillStyle = '#f39c12';
-                else if (item.type === 'gun') ctx.fillStyle = '#e74c3c';
-                else if (item.type === 'spike') ctx.fillStyle = '#95a5a6'; 
-                
-                ctx.shadowBlur = 10 + 20 * sparkle; ctx.shadowColor = 'white'; ctx.fill(); ctx.shadowBlur = 0;
-                
-                let iconText = '';
-                if (item.type === 'magnet') iconText = '🧲';
-                else if (item.type === 'speed') iconText = 'UP';
-                else if (item.type === 'vision') iconText = '🔭';
-                else if (item.type === 'invincible') iconText = '⭐';
-                else if (item.type === 'gun') iconText = '🔫';
-                else if (item.type === 'spike') iconText = '✹'; 
-
-                ctx.fillStyle = `rgba(255, 255, 255, ${0.6 + 0.4 * sparkle})`; 
-                ctx.font = item.type === 'speed' ? 'bold 24px Arial' : '30px Arial'; 
-                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                ctx.fillText(iconText, item.x, item.y);
+                const spk = Math.abs(Math.sin(time / 200)); ctx.beginPath(); ctx.arc(item.x, item.y, item.radius, 0, Math.PI*2);
+                ctx.fillStyle = item.type==='magnet'?'#3498db':item.type==='speed'?'#f1c40f':item.type==='vision'?'#9b59b6':item.type==='invincible'?'#f39c12':item.type==='gun'?'#e74c3c':'#95a5a6';
+                ctx.shadowBlur = 10 + 20*spk; ctx.shadowColor = 'white'; ctx.fill(); ctx.shadowBlur = 0;
+                let icon = item.type==='magnet'?'🧲':item.type==='speed'?'UP':item.type==='vision'?'🔭':item.type==='invincible'?'⭐':item.type==='gun'?'🔫':'✹';
+                ctx.fillStyle = `rgba(255, 255, 255, ${0.6 + 0.4 * spk})`; ctx.font = item.type==='speed'?'bold 24px Arial':'30px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(icon, item.x, item.y);
             });
-
             foods.forEach(f => {
                 ctx.beginPath(); 
-                if (f.isCorpse) {
-                    const sparkleTime = isPaused ? 0 : time; 
-                    const sparkle = Math.abs(Math.sin(sparkleTime / 150 + f.x)); 
-                    ctx.arc(f.x, f.y, f.radius + (sparkle * 2), 0, Math.PI * 2); 
-                    ctx.fillStyle = f.color; ctx.shadowBlur = 15 + 15 * sparkle; ctx.shadowColor = 'white'; 
-                } else {
-                    ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2);
-                    ctx.fillStyle = f.color; ctx.shadowBlur = f.isBig ? 15 : 5; ctx.shadowColor = f.color; 
-                }
+                if (f.isCorpse) { const spk = Math.abs(Math.sin((isPaused?0:time) / 150 + f.x)); ctx.arc(f.x, f.y, f.radius + (spk*2), 0, Math.PI*2); ctx.fillStyle = f.color; ctx.shadowBlur = 15 + 15*spk; ctx.shadowColor = 'white'; } 
+                else { ctx.arc(f.x, f.y, f.radius, 0, Math.PI*2); ctx.fillStyle = f.color; ctx.shadowBlur = f.isBig ? 15 : 5; ctx.shadowColor = f.color; }
                 ctx.fill(); ctx.shadowBlur = 0;
             });
 
-            const drawSnake = (s) => {
-                const isInvincible = (time < s.buffs.invincible);
-                const invincibleSparkle = isInvincible ? Math.abs(Math.sin(time / 100)) : 0;
-                const isSpiked = (time < s.buffs.spike);
+            // 뱀 그리기
+            allSnakes.forEach(s => {
+                if (s.isDead) return;
+                const isInv = (time < s.buffs.invincible); const invSpk = isInv ? Math.abs(Math.sin(time / 100)) : 0; const isSpk = (time < s.buffs.spike);
 
                 for (let i = Math.floor(s.tailLength) - 1; i >= 0; i--) {
-                    const historyIndex = i * 4; 
-                    if (historyIndex < s.history.length) {
-                        const pos = s.history[historyIndex];
-                        
-                        if (isSpiked && i % 2 === 0) {
-                            ctx.strokeStyle = '#bdc3c7'; 
-                            ctx.lineWidth = 4;
-                            ctx.beginPath();
-                            for(let j=0; j<4; j++) {
-                                let ang = (Math.PI / 4) * j + (time / 500); 
-                                let dx = Math.cos(ang) * (s.radius * 4);
-                                let dy = Math.sin(ang) * (s.radius * 4);
-                                ctx.moveTo(pos.x - dx, pos.y - dy);
-                                ctx.lineTo(pos.x + dx, pos.y + dy);
-                            }
-                            ctx.stroke();
+                    const hIdx = i * 4; 
+                    if (hIdx < s.history.length) {
+                        const pos = s.history[hIdx];
+                        if (isSpk && i % 2 === 0) {
+                            ctx.strokeStyle = '#bdc3c7'; ctx.lineWidth = 4; ctx.beginPath();
+                            for(let j=0; j<4; j++) { let a = (Math.PI/4)*j + (time/500); let dx = Math.cos(a)*(s.radius*4); let dy = Math.sin(a)*(s.radius*4); ctx.moveTo(pos.x-dx, pos.y-dy); ctx.lineTo(pos.x+dx, pos.y+dy); } ctx.stroke();
                         }
-
-                        ctx.beginPath(); ctx.arc(pos.x, pos.y, s.radius * 0.9, 0, Math.PI * 2);
-                        ctx.fillStyle = i % 2 === 0 ? (s.isPlayer ? '#cc5555' : '#444') : s.color;
-                        
-                        if (isInvincible) {
-                            ctx.shadowBlur = 20 * invincibleSparkle;
-                            ctx.shadowColor = '#ffff00';
-                        }
-                        
-                        ctx.fill(); 
-                        ctx.shadowBlur = 0;
-                        ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
+                        ctx.beginPath(); ctx.arc(pos.x, pos.y, s.radius * 0.9, 0, Math.PI*2);
+                        ctx.fillStyle = i%2===0 ? (s.isPlayer?'#cc5555':'#444') : s.color;
+                        if (isInv) { ctx.shadowBlur = 20*invSpk; ctx.shadowColor = '#ffff00'; }
+                        ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
                     }
                 }
                 
-                if (isSpiked) {
-                    ctx.strokeStyle = '#bdc3c7';
-                    ctx.lineWidth = 4;
-                    ctx.beginPath();
-                    for(let j=0; j<4; j++) {
-                        let ang = (Math.PI / 4) * j + (time / 500);
-                        let dx = Math.cos(ang) * (s.radius * 4);
-                        let dy = Math.sin(ang) * (s.radius * 4);
-                        ctx.moveTo(s.x - dx, s.y - dy);
-                        ctx.lineTo(s.x + dx, s.y + dy);
-                    }
-                    ctx.stroke();
+                if (isSpk) {
+                    ctx.strokeStyle = '#bdc3c7'; ctx.lineWidth = 4; ctx.beginPath();
+                    for(let j=0; j<4; j++) { let a = (Math.PI/4)*j + (time/500); let dx = Math.cos(a)*(s.radius*4); let dy = Math.sin(a)*(s.radius*4); ctx.moveTo(s.x-dx, s.y-dy); ctx.lineTo(s.x+dx, s.y+dy); } ctx.stroke();
                 }
 
-                ctx.beginPath(); ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2); ctx.fillStyle = s.color; 
-                if (isInvincible) {
-                    ctx.shadowBlur = 20 * invincibleSparkle;
-                    ctx.shadowColor = '#ffff00';
-                }
-                ctx.fill(); 
-                ctx.shadowBlur = 0;
-                ctx.stroke();
+                ctx.beginPath(); ctx.arc(s.x, s.y, s.radius, 0, Math.PI*2); ctx.fillStyle = s.color; 
+                if (isInv) { ctx.shadowBlur = 20*invSpk; ctx.shadowColor = '#ffff00'; } ctx.fill(); ctx.shadowBlur = 0; ctx.stroke();
                 
-                const eyeOffset = s.radius * 0.5; const eyeRadius = s.radius * 0.25;
-                ctx.fillStyle = 'white';
-                ctx.beginPath(); ctx.arc(s.x + Math.cos(s.angle - 0.5) * eyeOffset, s.y + Math.sin(s.angle - 0.5) * eyeOffset, eyeRadius, 0, Math.PI*2); ctx.fill();
-                ctx.beginPath(); ctx.arc(s.x + Math.cos(s.angle + 0.5) * eyeOffset, s.y + Math.sin(s.angle + 0.5) * eyeOffset, eyeRadius, 0, Math.PI*2); ctx.fill();
-                ctx.fillStyle = 'black';
-                ctx.beginPath(); ctx.arc(s.x + Math.cos(s.angle - 0.5) * eyeOffset, s.y + Math.sin(s.angle - 0.5) * eyeOffset, eyeRadius/2, 0, Math.PI*2); ctx.fill();
-                ctx.beginPath(); ctx.arc(s.x + Math.cos(s.angle + 0.5) * eyeOffset, s.y + Math.sin(s.angle + 0.5) * eyeOffset, eyeRadius/2, 0, Math.PI*2); ctx.fill();
+                const eOff = s.radius*0.5; const eRad = s.radius*0.25;
+                ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(s.x+Math.cos(s.angle-0.5)*eOff, s.y+Math.sin(s.angle-0.5)*eOff, eRad, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(s.x+Math.cos(s.angle+0.5)*eOff, s.y+Math.sin(s.angle+0.5)*eOff, eRad, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(s.x+Math.cos(s.angle-0.5)*eOff, s.y+Math.sin(s.angle-0.5)*eOff, eRad/2, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(s.x+Math.cos(s.angle+0.5)*eOff, s.y+Math.sin(s.angle+0.5)*eOff, eRad/2, 0, Math.PI*2); ctx.fill();
 
-                /* 닉네임 표시 */
-                ctx.fillStyle = 'white';
-                ctx.font = 'bold 14px Arial';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-                ctx.lineWidth = 3;
-                ctx.strokeStyle = 'black';
-                ctx.strokeText(s.name, s.x, s.y - s.radius - 8);
-                ctx.fillText(s.name, s.x, s.y - s.radius - 8);
+                ctx.fillStyle = 'white'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.lineWidth = 3; ctx.strokeStyle = 'black'; ctx.strokeText(s.name, s.x, s.y - s.radius - 8); ctx.fillText(s.name, s.x, s.y - s.radius - 8);
 
-                let activeBuffIcons = [];
-                if (s.buffs.magnet > time) activeBuffIcons.push(`🧲 ${Math.ceil((s.buffs.magnet - time)/1000)}`);
-                if (s.buffs.speed > time) activeBuffIcons.push(`UP ${Math.ceil((s.buffs.speed - time)/1000)}`);
-                if (s.buffs.vision > time) activeBuffIcons.push(`🔭 ${Math.ceil((s.buffs.vision - time)/1000)}`);
-                if (s.buffs.invincible > time) activeBuffIcons.push(`⭐ ${Math.ceil((s.buffs.invincible - time)/1000)}`);
-                if (s.buffs.gun > time) activeBuffIcons.push(`🔫 ${Math.ceil((s.buffs.gun - time)/1000)}`);
-                if (s.buffs.spike > time) activeBuffIcons.push(`✹ ${Math.ceil((s.buffs.spike - time)/1000)}`);
+                let aIcons = [];
+                if (s.buffs.magnet > time) aIcons.push(`🧲 ${Math.ceil((s.buffs.magnet - time)/1000)}`);
+                if (s.buffs.speed > time) aIcons.push(`UP ${Math.ceil((s.buffs.speed - time)/1000)}`);
+                if (s.buffs.vision > time) aIcons.push(`🔭 ${Math.ceil((s.buffs.vision - time)/1000)}`);
+                if (s.buffs.invincible > time) aIcons.push(`⭐ ${Math.ceil((s.buffs.invincible - time)/1000)}`);
+                if (s.buffs.gun > time) aIcons.push(`🔫 ${Math.ceil((s.buffs.gun - time)/1000)}`);
+                if (s.buffs.spike > time) aIcons.push(`✹ ${Math.ceil((s.buffs.spike - time)/1000)}`);
 
-                if (activeBuffIcons.length > 0) {
-                    ctx.font = 'bold 40px Arial'; 
-                    ctx.fillStyle = '#ffff00';
-                    activeBuffIcons.forEach((text, idx) => {
-                        let yPos = s.y - s.radius - 40 - (idx * 45);
-                        ctx.strokeText(text, s.x, yPos);
-                        ctx.fillText(text, s.x, yPos);
-                    });
+                if (aIcons.length > 0) {
+                    ctx.font = 'bold 40px Arial'; ctx.fillStyle = '#ffff00';
+                    aIcons.forEach((text, idx) => { let yPos = s.y - s.radius - 40 - (idx * 45); ctx.strokeText(text, s.x, yPos); ctx.fillText(text, s.x, yPos); });
                 }
-            };
-
-            enemies.forEach(drawSnake);
-            if (snake && !snake.isDead) drawSnake(snake);
+            });
 
             ctx.restore();
 
             if (isPaused) {
-                ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                ctx.fillStyle = "white";
-                ctx.font = "bold 60px Arial";
-                ctx.textAlign = "center";
-                ctx.textBaseline = "middle";
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = "black";
-                ctx.fillText("PAUSED", canvas.width / 2, canvas.height / 2);
-                ctx.shadowBlur = 0; 
+                ctx.fillStyle = "rgba(0, 0, 0, 0.5)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = "white"; ctx.font = "bold 60px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.shadowBlur = 10; ctx.shadowColor = "black"; ctx.fillText("PAUSED", canvas.width / 2, canvas.height / 2); ctx.shadowBlur = 0; 
             }
         }
 
-        function gameLoop() {
-            update();
-            draw();
-            requestAnimationFrame(gameLoop);
+        // --- 메인 루프 분기 ---
+        function hostGameLoop() {
+            updateHostLogic(); // 물리 연산
+            renderClient();    // 화면 그리기
+            if (gameMode !== 'client') requestAnimationFrame(hostGameLoop);
         }
 
-        requestAnimationFrame(gameLoop);
+        function updateLeaderboard(snakesArray) {
+            let sorted = [...snakesArray].sort((a, b) => b.score - a.score);
+            const maxDisp = (window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) ? 4 : 10;
+            let html = '';
+            for (let i = 0; i < Math.min(maxDisp, sorted.length); i++) {
+                const s = sorted[i];
+                const myName = document.getElementById('nickname').value || 'Player';
+                // 내가 조종하는 뱀은 빨간색, 접속한 다른 실제 유저는 파란색 처리
+                let rankClass = '';
+                if (s.name === myName) rankClass = 'class="my-rank"';
+                else if (s.isPlayer) rankClass = 'class="remote-rank"';
+                html += `<li ${rankClass}>${s.name} <small>(${Math.floor(s.score)})</small></li>`;
+            }
+            leaderboardList.innerHTML = html;
+        }
+
     });
 </script>
 </body>
